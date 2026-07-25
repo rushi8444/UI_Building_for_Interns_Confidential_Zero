@@ -1,0 +1,326 @@
+C:\Users\ADMIN\Desktop\Scraper_Takion_Omnitrix\src\ColumnFunctions.cpp
+#include "stdafx.h"
+#include <atomic>
+#include <string>
+#include <fstream>
+#include <ctime>
+#include "TakionGui.h"
+#include "TakionDataApi.h"
+
+extern TakionMainWnd* takionMainWnd;
+extern volatile bool g_bShutdown;
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#pragma pack(push, 1)
+struct TakionTick {
+    char symbol[32];
+    double open;
+    double high;
+    double low;
+    double last;
+    double bid;
+    double ask;
+    unsigned __int64 volume;
+    unsigned int takionTimeMs;
+    int posSize;
+    unsigned int bidSize;
+    unsigned int askSize;
+};
+#pragma pack(pop)
+
+#define RING_BUFFER_SIZE 4096
+
+
+TakionTick g_TickBuffer[RING_BUFFER_SIZE];
+int g_RingHead = 0;
+int g_RingTail = 0;
+CRITICAL_SECTION g_RingCs;
+HANDLE g_hDataWorkerThread = NULL;
+bool g_RingInitialized = false;
+
+DWORD WINAPI DataPipeWorkerThread(LPVOID lpParam) {
+    HANDLE hPipe = INVALID_HANDLE_VALUE;
+    while (!g_bShutdown) {
+        if (hPipe == INVALID_HANDLE_VALUE) {
+            hPipe = CreateFileA("\\\\.\\pipe\\TakionData", GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        }
+        
+        TakionTick tickToSend;
+        bool hasData = false;
+        
+        EnterCriticalSection(&g_RingCs);
+        if (g_RingTail != g_RingHead) {
+            tickToSend = g_TickBuffer[g_RingTail];
+            g_RingTail = (g_RingTail + 1) % RING_BUFFER_SIZE;
+            hasData = true;
+        }
+        LeaveCriticalSection(&g_RingCs);
+        
+        if (hasData) {
+            if (hPipe != INVALID_HANDLE_VALUE) {
+                DWORD bytesWritten;
+                if (!WriteFile(hPipe, &tickToSend, sizeof(TakionTick), &bytesWritten, NULL)) {
+                    CloseHandle(hPipe);
+                    hPipe = INVALID_HANDLE_VALUE;
+                }
+            }
+        } else {
+            Sleep(1);
+        }
+    }
+    
+    if (hPipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(hPipe);
+    }
+    return 0;
+}
+
+void InitializeDataPipe() {
+    if (!g_RingInitialized) {
+        InitializeCriticalSection(&g_RingCs);
+        g_hDataWorkerThread = CreateThread(NULL, 0, DataPipeWorkerThread, NULL, 0, NULL);
+        g_RingInitialized = true;
+    }
+}
+
+void TerminateDataPipe() {
+    if (g_RingInitialized) {
+        if (g_hDataWorkerThread) {
+            CancelSynchronousIo(g_hDataWorkerThread);
+            WaitForSingleObject(g_hDataWorkerThread, 1000);
+            CloseHandle(g_hDataWorkerThread);
+            g_hDataWorkerThread = NULL;
+        }
+        DeleteCriticalSection(&g_RingCs);
+        g_RingInitialized = false;
+    }
+}
+
+bool WINAPI IsTraderIdValid(const char* traderId)
+{
+    return true;
+}
+
+
+static bool SafeGetMarketSorterData(MarketSorterRow* row, 
+                                    double& bid, double& ask, 
+                                    unsigned __int64& vol, 
+                                    double& open, double& high, 
+                                    double& low, double& last, 
+                                    char* symOut, int maxSymLen,
+                                    unsigned int& takionTime,
+                                    unsigned int& bidSizeOut,
+                                    unsigned int& askSizeOut) {
+    if (!row) return false;
+    __try {
+        vol = row->GetUInt64Value(MarketSorterWindow::MS_VOLUME);
+        
+        Price pBid = row->GetPriceValue(MarketSorterWindow::MS_BID);
+        if (pBid.isPositive()) bid = pBid.toDouble();
+
+        Price pAsk = row->GetPriceValue(MarketSorterWindow::MS_ASK);
+        if (pAsk.isPositive()) ask = pAsk.toDouble();
+
+        const Security* sec = (const Security*)row->GetBaseObject();
+        if (sec) {
+            if (bid <= 0.0) bid = sec->GetL1BidPrice().toDouble();
+            if (ask <= 0.0) ask = sec->GetL1AskPrice().toDouble();
+            
+            // Based on brute force extraction of Takion 2015 Market Sorter memory:
+            // Column 488 perfectly maps to the L2 Bid Size
+            // Column 487 perfectly maps to the L2 Ask Size
+            bidSizeOut = row->GetUIntValue(488);
+            askSizeOut = row->GetUIntValue(487);
+            
+            open = sec->GetOpenPrice().toDouble();
+            high = sec->GetHighPrice().toDouble();
+            low = sec->GetLowPrice().toDouble();
+            last = sec->GetTodaysClosePrice().toDouble();
+            
+            const char* s = sec->GetSymbol();
+            if (s) {
+                strncpy_s(symOut, maxSymLen, s, _TRUNCATE);
+            }
+        }
+        
+        if (open <= 0.0) { Price p = row->GetPriceValue(MarketSorterWindow::MS_OPEN_PRICE); if(p.isPositive()) open = p.toDouble(); }
+        if (high <= 0.0) { Price p = row->GetPriceValue(MarketSorterWindow::MS_HIGH_PRICE); if(p.isPositive()) high = p.toDouble(); }
+        if (low <= 0.0) { Price p = row->GetPriceValue(MarketSorterWindow::MS_LOW_PRICE); if(p.isPositive()) low = p.toDouble(); }
+        if (last <= 0.0) { Price p = row->GetPriceValue(MarketSorterWindow::MS_LAST_TRADE); if(p.isPositive()) last = p.toDouble(); }
+        
+        takionTime = row->GetUIntValue(MarketSorterWindow::MS_LAST_PRINT_TIME);
+        if (takionTime == 0) {
+            takionTime = row->GetUIntValue(MarketSorterWindow::MS_TRADE_TIME);
+        }
+
+        return true;
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+class OneMinuteCsvLoggerRowValue : public CharPtrRowValue {
+private:
+    MarketSorterRow* m_row;
+
+public:
+    OneMinuteCsvLoggerRowValue(MarketSorterRow* row) : m_row(row) {}
+
+    virtual bool UpdateValue() override {
+        static time_t dllStartupTime = time(0);
+        if (time(0) - dllStartupTime < 5) {
+            return false;
+        }
+
+        if (!m_row) return false;
+
+        double bid = 0.0, ask = 0.0, open = 0.0, high = 0.0, low = 0.0, last = 0.0;
+        unsigned __int64 vol = 0;
+        unsigned int takionTimeMs = 0;
+        char sym[32] = "UNKNOWN";
+        unsigned int bidSize = 0, askSize = 0;
+
+        if (!SafeGetMarketSorterData(m_row, bid, ask, vol, open, high, low, last, sym, sizeof(sym), takionTimeMs, bidSize, askSize)) {
+            return false;
+        }
+
+        int posSize = 0;
+        const Security* sec = (const Security*)m_row->GetBaseObject();
+        if (sec) {
+            Account* account = TD_GetDefaultAccount();
+            if (!account) account = TD_GetCurrentAccount();
+            if (account) {
+                const Position* pos = account->FindPosition(sec);
+                if (pos) posSize = pos->GetSize();
+            }
+        }
+
+        TakionTick tick;
+        memset(&tick, 0, sizeof(tick));
+        strncpy_s(tick.symbol, sizeof(tick.symbol), sym, _TRUNCATE);
+        tick.open = open;
+        tick.high = high;
+        tick.low = low;
+        tick.last = last;
+        tick.bid = bid;
+        tick.ask = ask;
+        tick.volume = vol;
+        tick.takionTimeMs = takionTimeMs;
+        tick.posSize = posSize;
+        tick.bidSize = bidSize;
+        tick.askSize = askSize;
+
+        EnterCriticalSection(&g_RingCs);
+        g_TickBuffer[g_RingHead] = tick;
+        g_RingHead = (g_RingHead + 1) % RING_BUFFER_SIZE;
+        if (g_RingHead == g_RingTail) {
+            // Buffer full: push tail forward to drop oldest tick
+            g_RingTail = (g_RingTail + 1) % RING_BUFFER_SIZE;
+        }
+        LeaveCriticalSection(&g_RingCs);
+
+        // DO NOT call SetValue to prevent UI redraw lag!
+        return false;
+    }
+};
+
+RowValue* WINAPI CreateMsRowValue(unsigned short i, MarketSorterRow* row, const MarketSorterWindow* msWindow, unsigned int& dynamicFlags)
+{
+    dynamicFlags = 1 << MSDF_DYNAMIC;
+    switch(i)
+    {
+        case 0:
+        return new OneMinuteCsvLoggerRowValue(row);
+
+        default:
+        return nullptr;
+    }
+}
+
+bool WINAPI GetMsColumnInfo(unsigned short i, const char*& columnName, int& width, unsigned char& useTicks, bool& sortable, bool& defaultSortAscending, const char*& columnTooltip, unsigned char& followable, UINT& defaultHorizontalJustification)
+{
+    width = 150;
+    sortable = true;
+    defaultSortAscending = false;
+    useTicks = 0;
+    followable = 1;
+    defaultHorizontalJustification = DT_CENTER;
+
+    switch(i)
+    {
+        case 0:
+        columnName = "omnitrixds";
+        columnTooltip = "Omnitrix Backtest Scraper";
+        useTicks = 0;
+        break;
+
+        default:
+        return false;
+    }
+    return true;
+}
+
+unsigned short WINAPI GetMsAdditionalColumnCount()
+{
+    return 1;
+}
+
+void WINAPI AdditionalMsLockWait(const MarketSorterRow* row) {}
+void WINAPI AdditionalMsUnlock(const MarketSorterRow* row) {}
+
+//========================================================================
+// ACCOUNT WINDOW
+//========================================================================
+unsigned short WINAPI GetActAdditionalColumnCount() { return 0; }
+RowValue* WINAPI CreateActRowValue(unsigned short i, AccountRow* row, const AccountWindow* actWindow, bool& dynamic) { return nullptr; }
+bool WINAPI GetActColumnInfo(unsigned short i, const char*& columnName, int& width, unsigned char& useTicks, bool& sortable, bool& defaultSortAscending, const char*& columnTooltip, unsigned char& followable, UINT& defaultHorizontalJustification) { return false; }
+
+//========================================================================
+// ORDER WINDOW
+//========================================================================
+unsigned short WINAPI GetOrdAdditionalColumnCount() { return 0; }
+bool WINAPI OrdUpdateNonCumulativeRowValue(RowValue* rowValue, unsigned short i, OrderRowTotal* rowTotal, const Row* rowUpdated) { return false; }
+bool WINAPI OrdAddNonCumulativeRowValue(RowValue* rowValue, unsigned short i, OrderRowTotal* rowTotal, const Row* rowToAdd) { return false; }
+bool WINAPI OrdRemoveNonCumulativeRowValue(RowValue* rowValue, unsigned short i, OrderRowTotal* rowTotal, const Row* rowToRemove) { return false; }
+RowValue* WINAPI CreateOrdTotalRowValue(unsigned short i, const RowWindowSortable* ordWindow, bool& cumulative) { return nullptr; }
+COLORREF WINAPI GetOrdCellColor(unsigned short i, const OrderRow* row) { return 0xFFFFFFFF; }
+RowValue* WINAPI CreateOrdRowValue(unsigned short i, OrderRow* row, const RowWindowSortable* ordWindow, bool& dynamic) { return nullptr; }
+bool WINAPI GetOrdColumnInfo(unsigned short i, const char*& columnName, int& width, unsigned char& useTicks, bool& sortable, bool& defaultSortAscending, const char*& columnTooltip, unsigned char& followable, UINT& defaultHorizontalJustification) { return false; }
+
+// MISSING EXPORTS STUBS:
+RowValue* WINAPI CreateMsTotalRowValue(unsigned short i, const MarketSorterWindow* msWindow, unsigned int& dynamicFlags, bool& cumulative) { return nullptr; }
+bool WINAPI IsMsColumnPosition(unsigned short i) { return false; }
+void WINAPI ApplyMsPosition(MarketSorterRow* row, const Position* position) {}
+void WINAPI InvalidateMsPositionColumns(const MarketSorterWindow* msWindow) {}
+void WINAPI InvalidateMsPositionTotals(const MarketSorterWindow* msWindow) {}
+void WINAPI UpdateMsPositionValues(MarketSorterRow* row) {}
+void WINAPI AdjustMsPositionTotals(MarketSorterRow* row) {}
+COLORREF WINAPI GetMsCellColor(unsigned short i, const MarketSorterRow* row) { return 0xFFFFFFFF; }
+bool WINAPI AdditionalMsLock(const MarketSorterRow* row) { return false; }
+bool WINAPI MsUpdateNonCumulativeRowValue(RowValue* rowValue, unsigned short i, MarketSorterRowTotal* rowTotal, const Row* rowUpdated) { return false; }
+bool WINAPI MsAddNonCumulativeRowValue(RowValue* rowValue, unsigned short i, MarketSorterRowTotal* rowTotal, const Row* rowToAdd) { return false; }
+bool WINAPI MsRemoveNonCumulativeRowValue(RowValue* rowValue, unsigned short i, MarketSorterRowTotal* rowTotal, const Row* rowToRemove) { return false; }
+
+unsigned short WINAPI GetPosAdditionalColumnCount() { return 0; }
+bool WINAPI GetPosColumnInfo(unsigned short i, const char*& columnName, int& width, unsigned char& useTicks, bool& sortable, bool& defaultSortAscending, const char*& columnTooltip, unsigned char& followable, UINT& defaultHorizontalJustification) { return false; }
+RowValue* WINAPI CreatePosRowValue(unsigned short i, PositionRow* row, const RowWindowSortable* posWindow, bool& dynamic) { return nullptr; }
+RowValue* WINAPI CreatePosTotalRowValue(unsigned short i, const RowWindowSortable* posWindow, bool& cumulative) { return nullptr; }
+COLORREF WINAPI GetPosCellColor(unsigned short i, const PositionRow* row) { return 0xFFFFFFFF; }
+bool WINAPI PosUpdateNonCumulativeRowValue(RowValue* rowValue, unsigned short i, PositionRowTotal* rowTotal, const Row* rowUpdated) { return false; }
+bool WINAPI PosAddNonCumulativeRowValue(RowValue* rowValue, unsigned short i, PositionRowTotal* rowTotal, const Row* rowToAdd) { return false; }
+bool WINAPI PosRemoveNonCumulativeRowValue(RowValue* rowValue, unsigned short i, PositionRowTotal* rowTotal, const Row* rowToRemove) { return false; }
+
+RowValue* WINAPI CreateActTotalRowValue(unsigned short i, const AccountWindow* actWindow, bool& cumulative) { return nullptr; }
+COLORREF WINAPI GetActCellColor(unsigned short i, const AccountRow* row) { return 0xFFFFFFFF; }
+bool WINAPI ActUpdateNonCumulativeRowValue(RowValue* rowValue, unsigned short i, AccountRowTotal* rowTotal, const Row* rowUpdated) { return false; }
+bool WINAPI ActAddNonCumulativeRowValue(RowValue* rowValue, unsigned short i, AccountRowTotal* rowTotal, const Row* rowToAdd) { return false; }
+bool WINAPI ActRemoveNonCumulativeRowValue(RowValue* rowValue, unsigned short i, AccountRowTotal* rowTotal, const Row* rowToRemove) { return false; }
+
+#ifdef __cplusplus
+}
+#endif

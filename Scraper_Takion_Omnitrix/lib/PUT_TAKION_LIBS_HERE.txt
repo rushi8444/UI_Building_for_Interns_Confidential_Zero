@@ -1,0 +1,5 @@
+﻿Place Takion SDK .lib files here:
+  Observer.lib TakionData.lib TakionGui.lib TakionLog.lib
+  TakionMemory.lib TakionUtils.lib Utils.lib
+
+Copy from your Takion SDK: Api\x64\Release

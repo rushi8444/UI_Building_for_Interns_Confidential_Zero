@@ -1,0 +1,133 @@
+The USER performed the following action:
+Show the contents of file c:\Users\ADMIN\Desktop\Scraper_Takion_Omnitrix\src\ColumnFunctions.cpp from lines 104 to 130
+File Path: `file:///c:/Users/ADMIN/Desktop/Scraper_Takion_Omnitrix/src/ColumnFunctions.cpp`
+Total Lines: 327
+Total Bytes: 13609
+Showing lines 104 to 130
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+104:     return true;
+105: }
+106: 
+107: 
+108: static bool SafeGetMarketSorterData(MarketSorterRow* row, 
+109:                                     double& bid, double& ask, 
+110:                                     unsigned __int64& vol, 
+111:                                     double& open, double& high, 
+112:                                     double& low, double& last, 
+113:                                     char* symOut, int maxSymLen,
+114:                                     unsigned int& takionTime,
+115:                                     unsigned int& bidSizeOut,
+116:                                     unsigned int& askSizeOut) {
+117:     if (!row) return false;
+118:     __try {
+119:         vol = row->GetUInt64Value(MarketSorterWindow::MS_VOLUME);
+120:         
+121:         Price pBid = row->GetPriceValue(MarketSorterWindow::MS_BID);
+122:         if (pBid.isPositive()) bid = pBid.toDouble();
+123: 
+124:         Price pAsk = row->GetPriceValue(MarketSorterWindow::MS_ASK);
+125:         if (pAsk.isPositive()) ask = pAsk.toDouble();
+126: 
+127:         const Security* sec = (const Security*)row->GetBaseObject();
+128:         if (sec) {
+129:             if (bid <= 0.0) bid = sec->GetL1BidPrice().toDouble();
+130:             if (ask <= 0.0) ask = sec->GetL1AskPrice().toDouble();
+
+
+---
+Created At: 2026-07-22T11:48:09Z
+Completed At: 2026-07-22T11:48:09Z
+File Path: `file:///C:/Users/ADMIN/Desktop/Scraper_Takion_Omnitrix/src/ColumnFunctions.cpp`
+Total Lines: 327
+Total Bytes: 13609
+Showing lines 150 to 235
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+150:         if (high <= 0.0) { Price p = row->GetPriceValue(MarketSorterWindow::MS_HIGH_PRICE); if(p.isPositive()) high = p.toDouble(); }
+151:         if (low <= 0.0) { Price p = row->GetPriceValue(MarketSorterWindow::MS_LOW_PRICE); if(p.isPositive()) low = p.toDouble(); }
+152:         if (last <= 0.0) { Price p = row->GetPriceValue(MarketSorterWindow::MS_LAST_TRADE); if(p.isPositive()) last = p.toDouble(); }
+153:         
+154:         takionTime = row->GetUIntValue(MarketSorterWindow::MS_LAST_PRINT_TIME);
+155:         if (takionTime == 0) {
+156:             takionTime = row->GetUIntValue(MarketSorterWindow::MS_TRADE_TIME);
+157:         }
+158: 
+159:         return true;
+160:     }
+161:     __except(EXCEPTION_EXECUTE_HANDLER) {
+162:         return false;
+163:     }
+164: }
+165: 
+166: class OneMinuteCsvLoggerRowValue : public CharPtrRowValue {
+167: private:
+168:     MarketSorterRow* m_row;
+169: 
+170: public:
+171:     OneMinuteCsvLoggerRowValue(MarketSorterRow* row) : m_row(row) {}
+172: 
+173:     virtual bool UpdateValue() override {
+174:         static time_t dllStartupTime = time(0);
+175:         if (time(0) - dllStartupTime < 5) {
+176:             return false;
+177:         }
+178: 
+179:         if (!m_row) return false;
+180: 
+181:         double bid = 0.0, ask = 0.0, open = 0.0, high = 0.0, low = 0.0, last = 0.0;
+182:         unsigned __int64 vol = 0;
+183:         unsigned int takionTimeMs = 0;
+184:         char sym[32] = "UNKNOWN";
+185:         unsigned int bidSize = 0, askSize = 0;
+186: 
+187:         if (!SafeGetMarketSorterData(m_row, bid, ask, vol, open, high, low, last, sym, sizeof(sym), takionTimeMs, bidSize, askSize)) {
+188:             return false;
+189:         }
+190: 
+191:         int posSize = 0;
+192:         const Security* sec = (const Security*)m_row->GetBaseObject();
+193:         if (sec) {
+194:             Account* account = TD_GetDefaultAccount();
+195:             if (!account) account = TD_GetCurrentAccount();
+196:             if (account) {
+197:                 const Position* pos = account->FindPosition(sec);
+198:                 if (pos) posSize = pos->GetSize();
+199:             }
+200:         }
+201: 
+202:         TakionTick tick;
+203:         memset(&tick, 0, sizeof(tick));
+204:         strncpy_s(tick.symbol, sizeof(tick.symbol), sym, _TRUNCATE);
+205:         tick.open = open;
+206:         tick.high = high;
+207:         tick.low = low;
+208:         tick.last = last;
+209:         tick.bid = bid;
+210:         tick.ask = ask;
+211:         tick.volume = vol;
+212:         tick.takionTimeMs = takionTimeMs;
+213:         tick.posSize = posSize;
+214:         tick.bidSize = bidSize;
+215:         tick.askSize = askSize;
+216: 
+217:         EnterCriticalSection(&g_RingCs);
+218:         g_TickBuffer[g_RingHead] = tick;
+219:         g_RingHead = (g_RingHead + 1) % RING_BUFFER_SIZE;
+220:         if (g_RingHead == g_RingTail) {
+221:             // Buffer full: push tail forward to drop oldest tick
+222:             g_RingTail = (g_RingTail + 1) % RING_BUFFER_SIZE;
+223:         }
+224:         LeaveCriticalSection(&g_RingCs);
+225: 
+226:         char newText[128];
+227:         sprintf_s(newText, sizeof(newText), "%llu", vol);
+228:         SetValue(newText);
+229:         return false;
+230:     }
+231: };
+232: 
+233: RowValue* WINAPI CreateMsRowValue(unsigned short i, MarketSorterRow* row, const MarketSorterWindow* msWindow, unsigned int& dynamicFlags)
+234: {
+235:     dynamicFlags = 1 << MSDF_DYNAMIC;
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
