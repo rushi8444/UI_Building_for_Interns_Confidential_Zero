@@ -13,11 +13,11 @@ from PyQt6.QtCore import Qt, QTimer, QRectF
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QColor, QFont
 
-BUY = QColor(38, 166, 154)
-SELL = QColor(239, 83, 80)
-BG = QColor(18, 22, 31)
-GRID = QColor(34, 40, 52)
-TEXT = QColor(200, 205, 214)
+BUY = QColor(38, 166, 154)       # #26A69A
+SELL = QColor(242, 54, 69)       # #F23645
+BG = QColor(28, 27, 27)          # #1c1b1b
+GRID = QColor(42, 42, 42)        # #2A2A2A
+TEXT = QColor(232, 232, 232)     # #E8E8E8
 
 
 class TapeWidget(QWidget):

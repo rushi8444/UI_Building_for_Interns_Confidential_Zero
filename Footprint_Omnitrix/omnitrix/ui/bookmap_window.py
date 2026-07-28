@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import QMainWindow, QToolBar, QLabel, QComboBox, QPushButto
 from ..engine import BookmapBuffer, SRTracker
 from ..render import (
     BookHeatmapItem, BBOItem, BubbleItem, PieItem, BarsItem, ProjectionItem,
-    DomLadderItem, VolumeBarsItem, SRLinesItem,
+    DomLadderItem, VolumeBarsItem, SRLinesItem, DARK,
 )
 
 from ..render.bookmap import BOOKMAP_BG as BG
@@ -101,16 +101,47 @@ class BookmapWindow(QMainWindow):
         self.btn_in.clicked.connect(lambda: self._zoom(0.8))
         tb.addWidget(self.btn_in)
 
+        t = DARK
         self.setStyleSheet(
-            "QMainWindow{background:#05080F;}"
-            "QToolBar{background:#0C111A;border:none;padding:4px;spacing:4px;}"
-            "QLabel{color:#C7CCD6;font-size:13px;font-weight:600;}"
-            "QComboBox{background:#1C2230;color:#EFEFEF;border:1px solid #2A3140;"
-            " border-radius:4px;padding:3px 8px;font-size:13px;}"
-            "QPushButton{background:#1C2230;color:#EFEFEF;border:1px solid #2A3140;"
-            " border-radius:4px;padding:4px 10px;font-weight:600;}"
-            "QPushButton:hover{background:#26304"
-            "2;}"
+            f"QMainWindow {{ background-color:{t.bg}; }}"
+            
+            f" QToolBar {{ background-color:{t.panel}; border: none; border-bottom:1px solid {t.grid}; border-right:1px solid {t.grid}; padding:6px; spacing:8px; }}"
+            f" QToolBar::separator {{ background-color:{t.grid}; width:1px; height:20px; margin:0px 6px; }}"
+            
+            f" QLabel {{ color:{t.text}; font-size:12px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            
+            f" QCheckBox {{ color:{t.text}; font-size:12px; font-weight:600; spacing:6px; font-family:'Inter', sans-serif; }}"
+            f" QCheckBox::indicator {{ width:14px; height:14px; border:1px solid {t.grid}; border-radius:3px; background-color:{t.bg}; }}"
+            f" QCheckBox::indicator:checked {{ background-color:{t.bull}; border-color:{t.bull}; }}"
+            
+            f" QComboBox {{ background-color:rgba(42, 42, 42, 0.6); color:{t.text}; border:1px solid {t.grid}; border-radius:4px; padding:4px 10px; min-height:22px; font-size:12px; font-weight:500; font-family:'Inter', sans-serif; }}"
+            f" QComboBox:hover {{ background-color:{t.grid}; }}"
+            f" QComboBox::drop-down {{ border:none; width:0px; }}"
+            f" QComboBox::down-arrow {{ image: none; }}"
+            f" QComboBox QAbstractItemView {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; selection-background-color:{t.grid}; outline: none; }}"
+            
+            f" QPushButton {{ background-color:transparent; color:#8A8A8A; border:1px solid transparent; border-radius:4px; padding:6px 12px; font-weight:500; font-size:12px; font-family:'Inter', sans-serif; }}"
+            f" QPushButton:hover {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:pressed {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:checked {{ background-color:{t.bull}; color:#ffffff; border-color:{t.bull}; font-weight:600; }}"
+            f" QPushButton::menu-indicator {{ image: none; }}"
+            
+            f" QMenu {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; }}"
+            f" QMenu::item {{ padding:6px 24px; }}"
+            f" QMenu::item:selected {{ background-color:{t.grid}; }}"
+            
+            f" QDockWidget {{ color:{t.text}; titlebar-close-icon:none; titlebar-normal-icon:none; font-family:'Inter', sans-serif; }}"
+            f" QDockWidget::title {{ background-color:{t.panel}; color:#8A8A8A; font-weight:700; font-size:11px; text-transform:uppercase; padding:8px 12px; border-bottom:1px solid {t.grid}; border-top:1px solid {t.grid}; }}"
+            
+            f" QTabBar::tab {{ background-color:{t.bg}; color:#8A8A8A; padding:8px 16px; border:1px solid {t.grid}; border-bottom:none; font-size:11px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            f" QTabBar::tab:selected {{ background-color:{t.panel}; color:{t.text}; border-top:2px solid {t.bull}; }}"
+            f" QTabWidget::pane {{ border:1px solid {t.grid}; }}"
+            
+            f" QPushButton#sidebar_icon {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
+            f" QPushButton#sidebar_icon_active {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #26A69A; background-color: #2A2A2A; border: none; }}"
+            f" QPushButton#sidebar_icon_danger {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #F23645; }}"
         )
 
     # ---- plots -----------------------------------------------------------
@@ -147,7 +178,7 @@ class BookmapWindow(QMainWindow):
         for plot in (self.main, self.dom, self.vol):
             for ax in ("right", "bottom"):
                 a = plot.getAxis(ax)
-                a.setPen(pg.mkPen("#243040")); a.setTextPen(pg.mkPen("#8A93A6"))
+                a.setPen(pg.mkPen(DARK.axis)); a.setTextPen(pg.mkPen(DARK.text))
 
         self.heat = BookHeatmapItem(self.tick)
         self.bbo = BBOItem(self.tick)
@@ -179,10 +210,10 @@ class BookmapWindow(QMainWindow):
         self.main.addItem(self.cursor, ignoreBounds=True)
         self.price_line = pg.InfiniteLine(
             angle=0, movable=False,
-            pen=pg.mkPen("#D8DCE4", width=1, style=Qt.PenStyle.DashLine),
+            pen=pg.mkPen(DARK.cvd, width=1, style=Qt.PenStyle.DashLine),
             label="{value:.2f}",
             labelOpts={"position": 0.98, "color": "#0A0E16",
-                       "fill": "#D8DCE4", "movable": False})
+                       "fill": DARK.cvd, "movable": False})
         self.main.addItem(self.price_line, ignoreBounds=True)
 
         # resting limit orders projected as fat bands just ahead of price
@@ -199,20 +230,20 @@ class BookmapWindow(QMainWindow):
 
         # ---- crosshair with live price / time / liquidity readout ----
         self.cx_v = pg.InfiniteLine(angle=90, movable=False,
-                                    pen=pg.mkPen("#7E8AA0", width=1,
+                                    pen=pg.mkPen("#666", width=1,
                                                  style=Qt.PenStyle.DashLine))
         self.cx_h = pg.InfiniteLine(
             angle=0, movable=False,
-            pen=pg.mkPen("#7E8AA0", width=1, style=Qt.PenStyle.DashLine),
+            pen=pg.mkPen("#666", width=1, style=Qt.PenStyle.DashLine),
             label="{value:.2f}",
-            labelOpts={"position": 0.02, "color": "#0A0E16",
-                       "fill": "#7E8AA0", "movable": False})
+            labelOpts={"position": 0.02, "color": "#E8E8E8",
+                       "fill": "#2A2A2A", "movable": False})
         for ln in (self.cx_v, self.cx_h):
             ln.setVisible(False)
             self.main.addItem(ln, ignoreBounds=True)
 
-        self.readout = pg.TextItem(anchor=(0, 0), color="#D8DCE4",
-                                   fill=pg.mkBrush(12, 24, 40, 215))
+        self.readout = pg.TextItem(anchor=(0, 0), color=DARK.text,
+                                   fill=pg.mkBrush(28, 27, 27, 215))
         self.readout.setZValue(50)
         self.readout.setVisible(False)
         self.main.addItem(self.readout, ignoreBounds=True)

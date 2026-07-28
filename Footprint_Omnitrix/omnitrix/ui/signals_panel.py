@@ -12,11 +12,11 @@ from PyQt6.QtWidgets import QWidget
 
 from ..engine import signals
 
-BG = QColor(15, 19, 28)
-HEAD = QColor(143, 160, 182)
-RULE = QColor(35, 42, 54)
-TEXT = QColor(206, 212, 222)
-DIM = QColor(140, 148, 162)
+BG = QColor(28, 27, 27)          # #1c1b1b
+HEAD = QColor(138, 138, 138)     # #8A8A8A
+RULE = QColor(42, 42, 42)        # #2A2A2A
+TEXT = QColor(232, 232, 232)     # #E8E8E8
+DIM = QColor(138, 138, 138)      # #8A8A8A
 
 KIND_COL = {
     "block": QColor(156, 123, 255),

@@ -11,9 +11,9 @@ from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QLabel, QComboBox, QPushButton,
 )
 
-from ..render import TPOItem, VolumeProfileItem
+from ..render import TPOItem, VolumeProfileItem, DARK
 
-BG = "#0B0E14"
+BG = "#131313"
 
 
 class ProfileWindow(QMainWindow):
@@ -48,19 +48,55 @@ class ProfileWindow(QMainWindow):
         self.tpo_combo.currentTextChanged.connect(self._on_tpo_mode)
         tb.addWidget(self.tpo_combo)
 
-        self.btn_fit = QPushButton("Fit")
+        self.btn_fit = QPushButton("\ue3b4")
+        self.btn_fit.setToolTip("Fit")
+        self.btn_fit.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
         self.btn_fit.clicked.connect(self._fit)
         tb.addWidget(self.btn_fit)
         self.lbl = QLabel("   ")
         tb.addWidget(self.lbl)
+        t = DARK
         self.setStyleSheet(
-            f"QMainWindow{{background:{BG};}}"
-            "QToolBar{background:#12161F;border:none;padding:4px;spacing:6px;}"
-            "QLabel{color:#C7CCD6;font-size:13px;font-weight:600;}"
-            "QComboBox{background:#1C2230;color:#EFEFEF;border:1px solid #2A3140;"
-            " border-radius:4px;padding:3px 8px;}"
-            "QPushButton{background:#1C2230;color:#EFEFEF;border:1px solid #2A3140;"
-            " border-radius:4px;padding:4px 10px;font-weight:600;}")
+            f"QMainWindow {{ background-color:{t.bg}; }}"
+            
+            f" QToolBar {{ background-color:{t.panel}; border: none; border-bottom:1px solid {t.grid}; border-right:1px solid {t.grid}; padding:6px; spacing:8px; }}"
+            f" QToolBar::separator {{ background-color:{t.grid}; width:1px; height:20px; margin:0px 6px; }}"
+            
+            f" QLabel {{ color:{t.text}; font-size:12px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            
+            f" QCheckBox {{ color:{t.text}; font-size:12px; font-weight:600; spacing:6px; font-family:'Inter', sans-serif; }}"
+            f" QCheckBox::indicator {{ width:14px; height:14px; border:1px solid {t.grid}; border-radius:3px; background-color:{t.bg}; }}"
+            f" QCheckBox::indicator:checked {{ background-color:{t.bull}; border-color:{t.bull}; }}"
+            
+            f" QComboBox {{ background-color:rgba(42, 42, 42, 0.6); color:{t.text}; border:1px solid {t.grid}; border-radius:4px; padding:4px 10px; min-height:22px; font-size:12px; font-weight:500; font-family:'Inter', sans-serif; }}"
+            f" QComboBox:hover {{ background-color:{t.grid}; }}"
+            f" QComboBox::drop-down {{ border:none; width:0px; }}"
+            f" QComboBox::down-arrow {{ image: none; }}"
+            f" QComboBox QAbstractItemView {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; selection-background-color:{t.grid}; outline: none; }}"
+            
+            f" QPushButton {{ background-color:transparent; color:#8A8A8A; border:1px solid transparent; border-radius:4px; padding:6px 12px; font-weight:500; font-size:12px; font-family:'Inter', sans-serif; }}"
+            f" QPushButton:hover {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:pressed {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:checked {{ background-color:{t.bull}; color:#ffffff; border-color:{t.bull}; font-weight:600; }}"
+            f" QPushButton::menu-indicator {{ image: none; }}"
+            
+            f" QMenu {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; }}"
+            f" QMenu::item {{ padding:6px 24px; }}"
+            f" QMenu::item:selected {{ background-color:{t.grid}; }}"
+            
+            f" QDockWidget {{ color:{t.text}; titlebar-close-icon:none; titlebar-normal-icon:none; font-family:'Inter', sans-serif; }}"
+            f" QDockWidget::title {{ background-color:{t.panel}; color:#8A8A8A; font-weight:700; font-size:11px; text-transform:uppercase; padding:8px 12px; border-bottom:1px solid {t.grid}; border-top:1px solid {t.grid}; }}"
+            
+            f" QTabBar::tab {{ background-color:{t.bg}; color:#8A8A8A; padding:8px 16px; border:1px solid {t.grid}; border-bottom:none; font-size:11px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            f" QTabBar::tab:selected {{ background-color:{t.panel}; color:{t.text}; border-top:2px solid {t.bull}; }}"
+            f" QTabWidget::pane {{ border:1px solid {t.grid}; }}"
+            
+            f" QPushButton#sidebar_icon {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
+            f" QPushButton#sidebar_icon_active {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #26A69A; background-color: #2A2A2A; border: none; }}"
+            f" QPushButton#sidebar_icon_danger {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #F23645; }}"
+        )
 
     def _build_plots(self) -> None:
         self.glw = pg.GraphicsLayoutWidget()
@@ -85,7 +121,7 @@ class ProfileWindow(QMainWindow):
         for plot in (self.tpo_plot, self.vp_plot):
             for ax in ("right", "bottom"):
                 a = plot.getAxis(ax)
-                a.setPen(pg.mkPen("#2A3140")); a.setTextPen(pg.mkPen("#8A93A6"))
+                a.setPen(pg.mkPen(DARK.axis)); a.setTextPen(pg.mkPen(DARK.text))
 
         self.tpo_item = TPOItem(self.tick)
         self.tpo_plot.addItem(self.tpo_item)

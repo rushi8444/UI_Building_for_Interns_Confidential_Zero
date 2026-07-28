@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QLabel, QComboBox, QCheckBox, QPushButton, QWidget,
-    QSizePolicy, QDockWidget,
+    QSizePolicy, QDockWidget, QHBoxLayout, QVBoxLayout, QFrame, QButtonGroup, QMenu,
 )
 
 from ..engine import (
@@ -94,143 +94,250 @@ class OmnitrixWindow(QMainWindow):
         self._timer.timeout.connect(self._tick)
         self._timer.start(33)                 # ~30 fps drain + redraw
 
-    # ---- UI construction -------------------------------------------------
     def _build_ui(self) -> None:
+        import os
+        from PyQt6.QtGui import QFontDatabase
+        font_path = os.path.join(os.path.dirname(__file__), "..", "render", "MaterialSymbolsOutlined.ttf")
+        QFontDatabase.addApplicationFont(font_path)
+
+        # ---- Top Navbar (Custom Widget inside QToolBar) ----
         tb = QToolBar()
+        tb.setObjectName("header_toolbar")
         tb.setMovable(False)
-        self.addToolBar(tb)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
 
-        tb.addWidget(QLabel(" Symbol "))
+        navbar = QWidget()
+        navbar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        nav_layout = QHBoxLayout(navbar)
+        nav_layout.setContentsMargins(16, 0, 16, 0)
+        nav_layout.setSpacing(16)
+
+        # Left Section
+        left_sec = QWidget()
+        left_layout = QHBoxLayout(left_sec)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(12)
+
+        # Brand
+        brand_w = QWidget()
+        bl = QHBoxLayout(brand_w)
+        bl.setContentsMargins(0,0,0,0)
+        bl.setSpacing(4)
+        lbl_icon = QLabel("\uf190")
+        lbl_icon.setStyleSheet("color:#26A69A; font-family: 'Material Symbols Outlined'; font-size: 18px;")
+        lbl_txt = QLabel("Omnitrix Order Flow")
+        lbl_txt.setStyleSheet("color:#E8E8E8; font-weight:bold; font-size:13px;")
+        bl.addWidget(lbl_icon)
+        bl.addWidget(lbl_txt)
+        left_layout.addWidget(brand_w)
+
+        # Separator Line (vertical)
+        vsep1 = QFrame()
+        vsep1.setFrameShape(QFrame.Shape.VLine)
+        vsep1.setStyleSheet("color: #2A2A2A;")
+        left_layout.addWidget(vsep1)
+
+        # Symbol
+        sym_lbl = QLabel("\uef7a")
+        sym_lbl.setStyleSheet("color:#26A69A; font-family: 'Material Symbols Outlined'; font-size: 18px;")
+        left_layout.addWidget(sym_lbl)
         self.sym_combo = QComboBox()
-        self.sym_combo.setMinimumWidth(90)
+        self.sym_combo.setMinimumWidth(80)
         self.sym_combo.currentTextChanged.connect(self._on_symbol)
-        tb.addWidget(self.sym_combo)
-
-        tb.addWidget(QLabel("  TF "))
+        left_layout.addWidget(self.sym_combo)
+        # Timeframe
+        lbl_tf = QLabel("TF")
+        lbl_tf.setStyleSheet("color:#8A8A8A; font-size:12px; margin-left: 8px;")
+        left_layout.addWidget(lbl_tf)
+        
         self.tf_combo = QComboBox()
-        self.tf_combo.addItems(list(TF_CHOICES))
+        self.tf_combo.addItems(["10s", "30s", "1m", "5m", "15m", "1h"])
+        self.tf_combo.setCurrentText("1m")
         self.tf_combo.currentTextChanged.connect(self._on_tf)
-        tb.addWidget(self.tf_combo)
+        left_layout.addWidget(self.tf_combo)
 
-        tb.addWidget(QLabel("  Mode "))
+        # Separator
+        vsep2 = QFrame()
+        vsep2.setFrameShape(QFrame.Shape.VLine)
+        vsep2.setStyleSheet("color: #2A2A2A; margin-left: 8px;")
+        left_layout.addWidget(vsep2)
+
+        # Modes Dropdown
+        lbl_mode = QLabel("Mode")
+        lbl_mode.setStyleSheet("color:#8A8A8A; font-size:12px; margin-left: 8px;")
+        left_layout.addWidget(lbl_mode)
+        
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(list(MODES))
         self.mode_combo.currentTextChanged.connect(self._on_mode)
-        tb.addWidget(self.mode_combo)
+        left_layout.addWidget(self.mode_combo)
 
-        tb.addSeparator()
+        # Indicators menu
+        btn_ind = QPushButton("Indicators")
+        btn_ind.setStyleSheet("color:#E8E8E8; font-family: 'Inter', sans-serif; background-color:rgba(42, 42, 42, 0.6); border:1px solid #2A2A2A; padding: 4px 16px; border-radius: 4px; font-weight: 500; font-size: 12px;")
+        menu_ind = QMenu(self)
+        btn_ind.setMenu(menu_ind)
+        left_layout.addWidget(btn_ind)
+
+        # Add all indicators to the menu instead of cluttering the bar
         self.chk_imb = QCheckBox("Imbalance")
         self.chk_imb.setChecked(True)
         self.chk_imb.toggled.connect(lambda v: self.fp.set_show_imbalance(v))
-        tb.addWidget(self.chk_imb)
-
-        tb.addWidget(QLabel(" ×"))
+        self.chk_imb.hide()
+        
         self.imb_combo = QComboBox()
         self.imb_combo.addItems(["2.0", "3.0", "4.0", "5.0"])
         self.imb_combo.setCurrentText("3.0")
-        self.imb_combo.currentTextChanged.connect(
-            lambda s: self.fp.set_imbalance_factor(float(s)))
-        tb.addWidget(self.imb_combo)
-
+        self.imb_combo.currentTextChanged.connect(lambda s: self.fp.set_imbalance_factor(float(s)))
+        self.imb_combo.hide()
+        
         self.chk_va = QCheckBox("Value Area")
         self.chk_va.setChecked(True)
         self.chk_va.toggled.connect(lambda v: self.fp.set_show_va(v))
-        tb.addWidget(self.chk_va)
-
+        self.chk_va.hide()
+        
         self.chk_vwap = QCheckBox("VWAP")
         self.chk_vwap.setChecked(True)
         self.chk_vwap.toggled.connect(self._on_vwap_toggled)
-        tb.addWidget(self.chk_vwap)
-
-        tb.addSeparator()
+        self.chk_vwap.hide()
+        
         self.chk_cpr = QCheckBox("CPR")
         self.chk_cpr.setChecked(False)
         self.chk_cpr.toggled.connect(self._on_cpr_toggled)
-        tb.addWidget(self.chk_cpr)
-
+        self.chk_cpr.hide()
+        
         self.chk_ema = QCheckBox("EMAs")
         self.chk_ema.setChecked(False)
         self.chk_ema.toggled.connect(self._on_ema_toggled)
-        tb.addWidget(self.chk_ema)
+        self.chk_ema.hide()
 
-        tb.addSeparator()
-        tb.addWidget(QLabel(" Theme "))
+        act_imb = menu_ind.addAction("Imbalance")
+        act_imb.setCheckable(True)
+        act_imb.setChecked(True)
+        act_imb.toggled.connect(self.chk_imb.setChecked)
+        
+        act_va = menu_ind.addAction("Value Area")
+        act_va.setCheckable(True)
+        act_va.setChecked(True)
+        act_va.toggled.connect(self.chk_va.setChecked)
+        
+        act_vwap = menu_ind.addAction("VWAP")
+        act_vwap.setCheckable(True)
+        act_vwap.setChecked(True)
+        act_vwap.toggled.connect(self.chk_vwap.setChecked)
+
+        act_cpr = menu_ind.addAction("CPR")
+        act_cpr.setCheckable(True)
+        act_cpr.toggled.connect(self.chk_cpr.setChecked)
+        
+        act_ema = menu_ind.addAction("EMAs")
+        act_ema.setCheckable(True)
+        act_ema.toggled.connect(self.chk_ema.setChecked)
+
+        nav_layout.addWidget(left_sec)
+        
+        # Spacer for justify-between
+        nav_layout.addStretch()
+
+        # Right Section
+        right_sec = QWidget()
+        right_layout = QHBoxLayout(right_sec)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(16)
+
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Dark", "Light"])
         self.theme_combo.currentTextChanged.connect(self._on_theme)
-        tb.addWidget(self.theme_combo)
+        self.theme_combo.hide()
 
-        self.btn_bookmap = QPushButton("Bookmap")
-        self.btn_bookmap.clicked.connect(self._open_bookmap)
-        tb.addWidget(self.btn_bookmap)
+        btn_theme = QPushButton("\ue518")
+        btn_theme.setToolTip("Toggle Theme")
+        btn_theme.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; border: none;")
+        btn_theme.clicked.connect(lambda: self.theme_combo.setCurrentText("Light" if self.theme_combo.currentText()=="Dark" else "Dark"))
+        right_layout.addWidget(btn_theme)
 
-        self.btn_profile = QPushButton("Profile")
-        self.btn_profile.clicked.connect(self._open_profile)
-        tb.addWidget(self.btn_profile)
+        vsep3 = QFrame()
+        vsep3.setFrameShape(QFrame.Shape.VLine)
+        vsep3.setStyleSheet("color: #2A2A2A;")
+        right_layout.addWidget(vsep3)
 
-        self.btn_analytics = QPushButton("Analytics")
-        self.btn_analytics.clicked.connect(self._open_analytics)
-        tb.addWidget(self.btn_analytics)
+        btn_tools = QPushButton("\uea3c")
+        btn_tools.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
+        btn_tools.setToolTip("Tools")
+        menu_tools = QMenu(self)
+        btn_tools.setMenu(menu_tools)
+        
+        act_bm = menu_tools.addAction("Bookmap")
+        act_bm.triggered.connect(self._open_bookmap)
+        act_pr = menu_tools.addAction("Profile")
+        act_pr.triggered.connect(self._open_profile)
+        act_an = menu_tools.addAction("Analytics")
+        act_an.triggered.connect(self._open_analytics)
+        act_mo = menu_tools.addAction("Monitor")
+        act_mo.triggered.connect(self._open_monitor)
+        act_dom = menu_tools.addAction("DOM")
+        act_dom.triggered.connect(self._open_dom)
+        right_layout.addWidget(btn_tools)
 
-        self.btn_monitor = QPushButton("Monitor")
-        self.btn_monitor.clicked.connect(self._open_monitor)
-        tb.addWidget(self.btn_monitor)
+        btn_center = QPushButton("\ue3b4")
+        btn_center.setToolTip("Center")
+        btn_center.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
+        btn_center.clicked.connect(self._center)
+        right_layout.addWidget(btn_center)
 
-        self.btn_dom = QPushButton("DOM")
-        self.btn_dom.clicked.connect(self._open_dom)
-        tb.addWidget(self.btn_dom)
+        btn_settings = QPushButton("\ue8b8")
+        btn_settings.setToolTip("Settings")
+        btn_settings.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
+        btn_settings.clicked.connect(self._open_settings)
+        right_layout.addWidget(btn_settings)
 
-        self.btn_settings = QPushButton("⚙ Settings")
-        self.btn_settings.clicked.connect(self._open_settings)
-        tb.addWidget(self.btn_settings)
+        self.lbl_link = QLabel("Disconnected")
+        self.lbl_link.setStyleSheet("color:#8A8A8A; font-weight:600;")
+        right_layout.addWidget(self.lbl_link)
 
-        self.btn_center = QPushButton("Center")
-        self.btn_center.clicked.connect(self._center)
-        tb.addWidget(self.btn_center)
+        nav_layout.addWidget(right_sec)
+        tb.addWidget(navbar)
 
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        tb.addWidget(spacer)
-        self.lbl_stats = QLabel("  ")
-        tb.addWidget(self.lbl_stats)
+        # Stats lbl hidden but initialized
+        self.lbl_stats = QLabel("")
+        self.lbl_stats.hide()
 
-        # Live-feed indicator: in --live mode you need to see at a glance
-        # whether the DLL is actually attached to both pipes.
-        self.lbl_link = QLabel("")
-        tb.addWidget(self.lbl_link)
-
-        # ---- Drawing Toolbar (Left) ----
+        # ---- Drawing Toolbar (Left Sidebar) ----
         dtb = QToolBar("Drawings")
+        dtb.setObjectName("drawing_toolbar")
         dtb.setMovable(False)
+        dtb.setOrientation(Qt.Orientation.Vertical)
         self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, dtb)
         
         self.active_drawing_tool = None
         self.drawing_items = []
         self._drawing_start_point = None
 
-        btn_cursor = QPushButton("Cursor")
-        btn_cursor.clicked.connect(lambda: self._set_drawing_tool(None))
-        dtb.addWidget(btn_cursor)
+        def add_dtb_btn(icon, tooltip, tool_name):
+            btn = QPushButton(icon)
+            btn.setObjectName("sidebar_icon")
+            btn.setToolTip(tooltip)
+            btn.setFixedSize(36, 36)
+            btn.clicked.connect(lambda: self._set_drawing_tool(tool_name))
+            dtb.addWidget(btn)
+            return btn
 
-        btn_fib = QPushButton("Fib Ret")
-        btn_fib.clicked.connect(lambda: self._set_drawing_tool("Fib"))
-        dtb.addWidget(btn_fib)
+        btn_cursor = add_dtb_btn("🖱", "Cursor", None)
+        btn_cursor.setObjectName("sidebar_icon_active")
 
-        btn_long = QPushButton("Long Pos")
-        btn_long.clicked.connect(lambda: self._set_drawing_tool("Long"))
-        dtb.addWidget(btn_long)
-
-        btn_short = QPushButton("Short Pos")
-        btn_short.clicked.connect(lambda: self._set_drawing_tool("Short"))
-        dtb.addWidget(btn_short)
-
-        btn_vp = QPushButton("Vol Profile")
-        btn_vp.clicked.connect(lambda: self._set_drawing_tool("VP"))
-        dtb.addWidget(btn_vp)
+        add_dtb_btn("📈", "Fib Ret", "Fib")
+        add_dtb_btn("🟢", "Long Pos", "Long")
+        add_dtb_btn("🔴", "Short Pos", "Short")
+        add_dtb_btn("📊", "Vol Profile", "VP")
         
-        btn_clear_drawings = QPushButton("Clear")
-        btn_clear_drawings.clicked.connect(self._clear_drawings)
-        dtb.addWidget(btn_clear_drawings)
+        dtb.addSeparator()
+        
+        btn_clear = QPushButton("🗑")
+        btn_clear.setObjectName("sidebar_icon_danger")
+        btn_clear.setToolTip("Clear Drawings")
+        btn_clear.setFixedSize(36, 36)
+        btn_clear.clicked.connect(self._clear_drawings)
+        dtb.addWidget(btn_clear)
 
         # ---- two linked panes: price (top), CVD (bottom) ----
         self.glw = pg.GraphicsLayoutWidget()
@@ -343,15 +450,45 @@ class OmnitrixWindow(QMainWindow):
         self.cvd_curve.setPen(pg.mkPen(t.cvd, width=2))
         self.glw.setBackground(t.bg)
         self.setStyleSheet(
-            f"QMainWindow {{ background:{t.bg}; }}"
-            f" QToolBar {{ background:{t.panel}; border:none; padding:5px; spacing:3px; }}"
-            f" QLabel {{ color:{t.text}; font-size:13px; font-weight:600; }}"
-            f" QCheckBox {{ color:{t.text}; font-size:12px; font-weight:600; padding:0 4px; }}"
-            f" QComboBox {{ background:{t.grid}; color:{t.text}; border:1px solid {t.axis};"
-            f"   border-radius:4px; padding:3px 6px; font-size:13px; }}"
-            f" QComboBox::drop-down {{ border:none; }}"
-            f" QPushButton {{ background:{t.bull}; color:#fff; border:none; border-radius:4px;"
-            f"   padding:5px 12px; font-weight:600; }}"
+            f"QMainWindow {{ background-color:{t.bg}; }}"
+            
+            f" QToolBar {{ background-color:{t.panel}; border: none; border-bottom:1px solid {t.grid}; border-right:1px solid {t.grid}; padding:6px; spacing:8px; }}"
+            f" QToolBar::separator {{ background-color:{t.grid}; width:1px; height:20px; margin:0px 6px; }}"
+            
+            f" QLabel {{ color:{t.text}; font-size:12px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            
+            f" QCheckBox {{ color:{t.text}; font-size:12px; font-weight:600; spacing:6px; font-family:'Inter', sans-serif; }}"
+            f" QCheckBox::indicator {{ width:14px; height:14px; border:1px solid {t.grid}; border-radius:3px; background-color:{t.bg}; }}"
+            f" QCheckBox::indicator:checked {{ background-color:{t.bull}; border-color:{t.bull}; }}"
+            
+            f" QComboBox {{ background-color:rgba(42, 42, 42, 0.6); color:{t.text}; border:1px solid {t.grid}; border-radius:4px; padding:4px 10px; min-height:22px; font-size:12px; font-weight:500; font-family:'Inter', sans-serif; }}"
+            f" QComboBox:hover {{ background-color:{t.grid}; }}"
+            f" QComboBox::drop-down {{ border:none; width:0px; }}"
+            f" QComboBox::down-arrow {{ image: none; }}"
+            f" QComboBox QAbstractItemView {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; selection-background-color:{t.grid}; outline: none; }}"
+            
+            f" QPushButton {{ background-color:transparent; color:#8A8A8A; border:1px solid transparent; border-radius:4px; padding:6px 12px; font-weight:500; font-size:12px; font-family:'Inter', sans-serif; }}"
+            f" QPushButton:hover {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:pressed {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:checked {{ background-color:{t.bull}; color:#ffffff; border-color:{t.bull}; font-weight:600; }}"
+            f" QPushButton::menu-indicator {{ image: none; }}"
+            
+            f" QMenu {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; }}"
+            f" QMenu::item {{ padding:6px 24px; }}"
+            f" QMenu::item:selected {{ background-color:{t.grid}; }}"
+            
+            f" QDockWidget {{ color:{t.text}; titlebar-close-icon:none; titlebar-normal-icon:none; font-family:'Inter', sans-serif; }}"
+            f" QDockWidget::title {{ background-color:{t.panel}; color:#8A8A8A; font-weight:700; font-size:11px; text-transform:uppercase; padding:8px 12px; border-bottom:1px solid {t.grid}; border-top:1px solid {t.grid}; }}"
+            
+            f" QTabBar::tab {{ background-color:{t.bg}; color:#8A8A8A; padding:8px 16px; border:1px solid {t.grid}; border-bottom:none; font-size:11px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            f" QTabBar::tab:selected {{ background-color:{t.panel}; color:{t.text}; border-top:2px solid {t.bull}; }}"
+            f" QTabWidget::pane {{ border:1px solid {t.grid}; }}"
+            
+            f" QPushButton#sidebar_icon {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
+            f" QPushButton#sidebar_icon_active {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #26A69A; background-color: #2A2A2A; border: none; }}"
+            f" QPushButton#sidebar_icon_danger {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #F23645; }}"
         )
         for plot in (self.price_plot, self.cvd_plot):
             for ax_name in ("bottom", "right"):

@@ -109,8 +109,8 @@ class FootprintItem(pg.GraphicsObject):
         if vb is None:
             return
         px_w, px_h = vb.viewPixelSize()
-        show_text = px_h < tick * 0.72          # only label when rows are tall enough
-
+        # Only show text if a tick is >10px tall and a box is >30px wide
+        show_text = (px_h < tick / 10.0) and (px_w < self.BOX_W / 30.0)
         xr = vb.viewRange()[0]
         x_lo = max(0, int(xr[0]) - 1)
         x_hi = min(len(self.bars), int(xr[1]) + 2)
@@ -123,7 +123,8 @@ class FootprintItem(pg.GraphicsObject):
             cc = c_bull if bar.is_bull else c_bear
             if self.show_candles:
                 self._paint_candle(p, x, bar, cc, half, tick)
-            if self.draw_cells and bar.cells:
+            # Hide the footprint backgrounds when zoomed out so we just see the candles
+            if self.draw_cells and bar.cells and show_text:
                 self._paint_block(p, x, bar, half, tick, show_text)
 
     def _paint_candle(self, p, x, bar, color, half, tick) -> None:

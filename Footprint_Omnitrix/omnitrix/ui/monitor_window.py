@@ -19,10 +19,10 @@ from ..engine import metrics
 COLS = ["Symbol", "Last", "Chg", "Chg %", "Volume", "Delta", "CVD",
         "Imbal", "Spread", "Bid Depth", "Ask Depth", "Trades"]
 
-UP = QColor(38, 190, 160)
-DOWN = QColor(239, 96, 96)
-NEUTRAL = QColor(200, 205, 214)
-BG = "#0B0E14"
+UP = QColor("#388E3C")
+DOWN = QColor("#D32F2F")
+NEUTRAL = QColor("#DFE4E1")
+BG = "#121212"
 
 
 def _fmt(v: float, dp: int = 0) -> str:
@@ -44,20 +44,58 @@ class MarketMonitorWindow(QMainWindow):
         self.table = QTableWidget(0, len(COLS))
         self.table.setHorizontalHeaderLabels(COLS)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(28)
+        self.table.setShowGrid(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+            QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setFont(QFont("Consolas", 10))
         self.setCentralWidget(self.table)
 
+        # Set professional default column widths
+        default_widths = [85, 95, 85, 85, 95, 95, 95, 85, 80, 95, 95, 85]
+        for i, w in enumerate(default_widths):
+            if i < self.table.columnCount():
+                self.table.setColumnWidth(i, w)
+
         self.setStyleSheet(
             f"QMainWindow{{background:{BG};}}"
-            "QTableWidget{background:#0F131C;alternate-background-color:#12161F;"
-            " color:#C8CDD6;gridline-color:#232A36;border:none;}"
-            "QHeaderView::section{background:#1A2130;color:#8FA0B6;"
-            " padding:6px;border:none;font-weight:700;}")
+            "QTableWidget{"
+            " background-color:#121212;"
+            " alternate-background-color:#161616;"
+            " color:#DFE4E1;"
+            " border:none;"
+            " font-family: 'JetBrains Mono', 'Consolas', monospace;"
+            " font-size: 12px;"
+            " outline: 0;"
+            "}"
+            "QTableWidget::item{"
+            " padding-left: 8px;"
+            " padding-right: 8px;"
+            " border-bottom: 1px solid #1C1C1C;"
+            "}"
+            "QTableWidget::item:selected{"
+            " background-color: rgba(0, 137, 123, 0.18);"
+            " color: #70D8C8;"
+            "}"
+            "QHeaderView::section{"
+            " background-color:#1A1A1A;"
+            " color:#879390;"
+            " padding: 6px 8px;"
+            " border:none;"
+            " border-bottom: 1px solid #2C2C2C;"
+            " font-family: 'Inter', sans-serif;"
+            " font-size: 11px;"
+            " font-weight: 600;"
+            " text-transform: uppercase;"
+            "}"
+            "QTableWidget::item:hover{"
+            " background-color:#1E1E1E;"
+            "}"
+        )
 
         self._rows: dict[str, int] = {}
         self._timer = QTimer(self)
@@ -69,8 +107,9 @@ class MarketMonitorWindow(QMainWindow):
         it = self.table.item(r, c)
         if it is None:
             it = QTableWidgetItem()
-            it.setTextAlignment(Qt.AlignmentFlag.AlignRight |
-                                Qt.AlignmentFlag.AlignVCenter)
+            align = (Qt.AlignmentFlag.AlignLeft if c == 0 
+                     else Qt.AlignmentFlag.AlignRight)
+            it.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(r, c, it)
         it.setText(text)
         it.setForeground(color)

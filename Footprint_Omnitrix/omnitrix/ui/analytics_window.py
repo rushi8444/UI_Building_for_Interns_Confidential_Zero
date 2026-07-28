@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QLinearGradient, QGradient, QColor, QBrush
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QLabel, QComboBox
 
 from ..engine import metrics
+from ..render import DARK
 from .bookmap_window import TF
 
-BG = "#0B0E14"
+BG = "#121212"
 
 
 class AnalyticsWindow(QMainWindow):
@@ -46,12 +48,48 @@ class AnalyticsWindow(QMainWindow):
         tb.addWidget(self.tf_combo)
         self.lbl = QLabel("   ")
         tb.addWidget(self.lbl)
+        t = DARK
         self.setStyleSheet(
-            f"QMainWindow{{background:{BG};}}"
-            "QToolBar{background:#12161F;border:none;padding:4px;spacing:6px;}"
-            "QLabel{color:#C7CCD6;font-size:13px;font-weight:600;}"
-            "QComboBox{background:#1C2230;color:#EFEFEF;border:1px solid #2A3140;"
-            " border-radius:4px;padding:3px 8px;}")
+            f"QMainWindow {{ background-color:{t.bg}; }}"
+            
+            f" QToolBar {{ background-color:{t.panel}; border: none; border-bottom:1px solid {t.grid}; border-right:1px solid {t.grid}; padding:6px; spacing:8px; }}"
+            f" QToolBar::separator {{ background-color:{t.grid}; width:1px; height:20px; margin:0px 6px; }}"
+            
+            f" QLabel {{ color:{t.text}; font-size:12px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            
+            f" QCheckBox {{ color:{t.text}; font-size:12px; font-weight:600; spacing:6px; font-family:'Inter', sans-serif; }}"
+            f" QCheckBox::indicator {{ width:14px; height:14px; border:1px solid {t.grid}; border-radius:3px; background-color:{t.bg}; }}"
+            f" QCheckBox::indicator:checked {{ background-color:{t.bull}; border-color:{t.bull}; }}"
+            
+            f" QComboBox {{ background-color:rgba(42, 42, 42, 0.6); color:{t.text}; border:1px solid {t.grid}; border-radius:4px; padding:4px 10px; min-height:22px; font-size:12px; font-weight:500; font-family:'Inter', sans-serif; }}"
+            f" QComboBox:hover {{ background-color:{t.grid}; }}"
+            f" QComboBox::drop-down {{ border:none; width:0px; }}"
+            f" QComboBox::down-arrow {{ image: none; }}"
+            f" QComboBox QAbstractItemView {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; selection-background-color:{t.grid}; outline: none; }}"
+            
+            f" QPushButton {{ background-color:transparent; color:#8A8A8A; border:1px solid transparent; border-radius:4px; padding:6px 12px; font-weight:500; font-size:12px; font-family:'Inter', sans-serif; }}"
+            f" QPushButton:hover {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:pressed {{ background-color:{t.grid}; color:{t.text}; }}"
+            f" QPushButton:checked {{ background-color:{t.bull}; color:#ffffff; border-color:{t.bull}; font-weight:600; }}"
+            f" QPushButton::menu-indicator {{ image: none; }}"
+            
+            f" QMenu {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; }}"
+            f" QMenu::item {{ padding:6px 24px; }}"
+            f" QMenu::item:selected {{ background-color:{t.grid}; }}"
+            
+            f" QDockWidget {{ color:{t.text}; titlebar-close-icon:none; titlebar-normal-icon:none; font-family:'Inter', sans-serif; }}"
+            f" QDockWidget::title {{ background-color:{t.panel}; color:#8A8A8A; font-weight:700; font-size:11px; text-transform:uppercase; padding:8px 12px; border-bottom:1px solid {t.grid}; border-top:1px solid {t.grid}; }}"
+            
+            f" QTabBar::tab {{ background-color:{t.bg}; color:#8A8A8A; padding:8px 16px; border:1px solid {t.grid}; border-bottom:none; font-size:11px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            f" QTabBar::tab:selected {{ background-color:{t.panel}; color:{t.text}; border-top:2px solid {t.bull}; }}"
+            f" QTabWidget::pane {{ border:1px solid {t.grid}; }}"
+            
+            f" QPushButton#sidebar_icon {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
+            f" QPushButton#sidebar_icon_active {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #26A69A; background-color: #2A2A2A; border: none; }}"
+            f" QPushButton#sidebar_icon_danger {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #F23645; }}"
+        )
 
     def _build_plots(self) -> None:
         self.glw = pg.GraphicsLayoutWidget()
@@ -64,42 +102,50 @@ class AnalyticsWindow(QMainWindow):
         for i, t in enumerate(titles):
             pl = self.glw.addPlot(row=i, col=0)
             pl.showAxis("right"); pl.hideAxis("left")
-            pl.setTitle(t, color="#8A93A6", size="10pt")
-            pl.showGrid(x=True, y=True, alpha=0.12)
+            pl.setTitle(t, color="#9A9A9A", size="11px")
+            pl.showGrid(x=True, y=True, alpha=0.03)
             if i:
                 pl.setXLink(self.plots[0])
             if i < len(titles) - 1:
                 pl.hideAxis("bottom")
             for ax in ("right", "bottom"):
                 a = pl.getAxis(ax)
-                a.setPen(pg.mkPen("#2A3140")); a.setTextPen(pg.mkPen("#8A93A6"))
+                a.setPen(pg.mkPen("#2A2A2A")); a.setTextPen(pg.mkPen("#9A9A9A"))
             self.plots.append(pl)
 
         p_imb, p_depth, p_spread, p_speed = self.plots
 
-        self.imb_curve = pg.PlotDataItem(pen=pg.mkPen("#42A5F5", width=1.5),
+        # Vertical Gradient Brush for Book Imbalance in logical data coordinates (-1 to 1)
+        grad = QLinearGradient(0, 1, 0, -1)
+        grad.setCoordinateMode(QGradient.CoordinateMode.LogicalMode)
+        grad.setColorAt(0.0, QColor(58, 110, 165, 140))  # Top (y=1): 55% opacity #3A6EA5
+        grad.setColorAt(0.5, QColor(58, 110, 165, 51))   # Middle (y=0): 20% opacity #3A6EA5
+        grad.setColorAt(1.0, QColor(58, 110, 165, 140))  # Bottom (y=-1): 55% opacity #3A6EA5
+        imb_brush = QBrush(grad)
+
+        self.imb_curve = pg.PlotDataItem(pen=pg.mkPen("#5B9BD5", width=1.5),
                                          fillLevel=0,
-                                         brush=pg.mkBrush(66, 165, 245, 70))
+                                         brush=imb_brush)
         p_imb.addItem(self.imb_curve)
         p_imb.addItem(pg.InfiniteLine(angle=0, pos=0, movable=False,
-                                      pen=pg.mkPen("#555", style=Qt.PenStyle.DashLine)),
+                                       pen=pg.mkPen("#9A9A9A", style=Qt.PenStyle.DashLine)),
                       ignoreBounds=True)
         p_imb.setYRange(-1, 1, padding=0)
 
-        self.bid_curve = pg.PlotDataItem(pen=pg.mkPen("#26A69A", width=1.4))
-        self.ask_curve = pg.PlotDataItem(pen=pg.mkPen("#EF5350", width=1.4))
+        self.bid_curve = pg.PlotDataItem(pen=pg.mkPen("#388E3C", width=1.5))
+        self.ask_curve = pg.PlotDataItem(pen=pg.mkPen("#D32F2F", width=1.5))
         p_depth.addItem(self.bid_curve); p_depth.addItem(self.ask_curve)
 
         # plain line, no fill — spread sits in a narrow band, so a fill to zero
         # would flood the pane and hide the variation
-        self.spread_curve = pg.PlotDataItem(pen=pg.mkPen("#FFB300", width=1.4))
+        self.spread_curve = pg.PlotDataItem(pen=pg.mkPen("#C9A227", width=1.2))
         p_spread.addItem(self.spread_curve)
 
-        self.speed_curve = pg.PlotDataItem(pen=pg.mkPen("#9C7BFF", width=1.2),
+        self.speed_curve = pg.PlotDataItem(pen=pg.mkPen("#7C6BAE", width=1.2),
                                            fillLevel=0,
-                                           brush=pg.mkBrush(156, 123, 255, 60))
+                                           brush=pg.mkBrush(92, 75, 140, 102))
         p_speed.addItem(self.speed_curve)
-        self.cvd_curve = pg.PlotDataItem(pen=pg.mkPen("#FFFFFF", width=1.6))
+        self.cvd_curve = pg.PlotDataItem(pen=pg.mkPen("#E0E0E0", width=1.5))
         self.cvd_vb = pg.ViewBox()
         p_speed.scene().addItem(self.cvd_vb)
         p_speed.getAxis("right").linkToView(self.cvd_vb)
@@ -142,7 +188,12 @@ class AnalyticsWindow(QMainWindow):
         if ys:
             imb = ys[-1]
             bias = "BID" if imb > 0.05 else ("ASK" if imb < -0.05 else "FLAT")
+            imb_color = "#388E3C" if imb > 0.05 else ("#D32F2F" if imb < -0.05 else "#9A9A9A")
+            cvd_val = cvd[-1] if cvd else 0
+            cvd_color = "#388E3C" if cvd_val > 0 else ("#D32F2F" if cvd_val < 0 else "#E0E0E0")
+            spread_val = sp[-1] if sp else 0
             self.lbl.setText(
-                f"   Imbalance {imb:+.2f} ({bias})   "
-                f"Spread {sp[-1] if sp else 0}t   "
-                f"CVD {cvd[-1] if cvd else 0:+,}")
+                f"&nbsp;&nbsp;&nbsp;Imbalance: <span style='color:{imb_color}; font-family:\"JetBrains Mono\", monospace;'>{imb:+.2f} ({bias})</span>"
+                f"&nbsp;&nbsp;&nbsp;&nbsp;Spread: <span style='color:#E0E0E0; font-family:\"JetBrains Mono\", monospace;'>{spread_val}t</span>"
+                f"&nbsp;&nbsp;&nbsp;&nbsp;CVD: <span style='color:{cvd_color}; font-family:\"JetBrains Mono\", monospace;'>{cvd_val:+,}</span>"
+            )

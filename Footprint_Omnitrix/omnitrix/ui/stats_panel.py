@@ -9,13 +9,13 @@ from PyQt6.QtCore import Qt, QTimer, QRectF
 from PyQt6.QtGui import QPainter, QColor, QFont
 from PyQt6.QtWidgets import QWidget
 
-BG = QColor(15, 19, 28)
-HEAD = QColor(143, 160, 182)
-LABEL = QColor(150, 157, 170)
-VALUE = QColor(214, 220, 230)
-UP = QColor(38, 190, 160)
-DOWN = QColor(239, 96, 96)
-RULE = QColor(35, 42, 54)
+BG = QColor(28, 27, 27)         # #1c1b1b
+HEAD = QColor(138, 138, 138)     # #8A8A8A
+LABEL = QColor(138, 138, 138)    # #8A8A8A
+VALUE = QColor(232, 232, 232)    # #E8E8E8
+UP = QColor(38, 166, 154)        # #26A69A
+DOWN = QColor(242, 54, 69)       # #F23645
+RULE = QColor(42, 42, 42)        # #2A2A2A
 
 
 def _fmt(v: float, dp: int = 0) -> str:

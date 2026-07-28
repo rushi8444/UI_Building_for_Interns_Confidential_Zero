@@ -36,7 +36,7 @@ ASK_LINE = QColor(246, 104, 118)
 # full range but leaves the uncovered price area reading as a void rather than
 # part of the chart. This sits dark enough to keep the ramp's headroom while
 # still being unmistakably blue.
-BOOKMAP_BG = "#0B2038"
+BOOKMAP_BG = "#131313"
 
 
 def _build_bookmap_lut() -> list[QColor]:
@@ -44,7 +44,7 @@ def _build_bookmap_lut() -> list[QColor]:
     # the ramp. By keeping the lowest value slightly above the background color
     # we ensure thin liquidity creates a visible gradient tail across the chart.
     stops = [
-        (0.00, (18, 48, 82)),      # distinct from bg (no liquidity/thin tail)
+        (0.00, (19, 19, 19)),      # distinct from bg (no liquidity/thin tail)
         (0.26, (26, 75, 122)),     # thin book
         (0.50, (38, 128, 194)),    # ordinary resting size
         (0.70, (82, 172, 222)),    # building
@@ -716,10 +716,18 @@ class DomLadderItem(pg.GraphicsObject):
         # Light text: it sits over the bar on wide levels and over the dark
         # background on thin ones, and stays readable on both.
         p.setPen(pg.mkPen("#EAEEF5"))
-        for ti, size in col.book.items():
+        drawn_y: list[float] = []
+        min_spacing = 14.0
+        # Sort levels by liquidity size descending so that significant walls
+        # (peaks) get priority for text labels in tight screen-space.
+        for ti, size in sorted(col.book.items(), key=lambda kv: kv[1], reverse=True):
             rp = tr.map(QPointF(mx, ti * tick))
+            sy = rp.y()
+            if any(abs(sy - dy) < min_spacing for dy in drawn_y):
+                continue
+            drawn_y.append(sy)
             p.save(); p.resetTransform()
-            p.drawText(QRectF(rp.x() - 62, rp.y() - 7, 58, 14),
+            p.drawText(QRectF(rp.x() - 62, sy - 7, 58, 14),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        str(size))
             p.restore()
