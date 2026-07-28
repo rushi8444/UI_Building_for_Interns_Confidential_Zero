@@ -52,6 +52,95 @@ MODES = {
 }
 
 
+class TradingViewBox(pg.ViewBox):
+    """TradingView-style interactive ViewBox.
+    - Wheel scroll zooms X-axis centered at mouse cursor position.
+    - Ctrl/Shift + Wheel scroll zooms Y-axis (price scale).
+    - Double click resets/enables Y-axis Auto-Fit.
+    """
+    def __init__(self, main_window=None, *args, **kwargs):
+        kwargs['enableMenu'] = False
+        super().__init__(*args, **kwargs)
+        self.main_window = main_window
+        self.setMouseMode(pg.ViewBox.PanMode)
+        self.is_dragging = False
+        self._drag_start_pos = None
+
+    def wheelEvent(self, ev, axis=None):
+        ev.accept()
+        if hasattr(ev, 'delta'):
+            delta = ev.delta()
+        elif hasattr(ev, 'angleDelta'):
+            delta = ev.angleDelta().y()
+        else:
+            delta = 0
+
+        if delta == 0:
+            return
+        
+        # Smooth exponential scale factor
+        s = 0.84 if delta > 0 else 1.19
+        
+        # Get mouse position in View coordinates
+        if hasattr(ev, 'scenePos'):
+            pos_scene = ev.scenePos()
+        elif hasattr(ev, 'position'):
+            pos_scene = ev.position()
+        elif hasattr(ev, 'pos'):
+            pos_scene = ev.pos()
+        else:
+            pos_scene = QPointF(0, 0)
+
+        pos = self.mapSceneToView(pos_scene)
+        
+        modifiers = ev.modifiers() if hasattr(ev, 'modifiers') else Qt.KeyboardModifier.NoModifier
+        is_ctrl_or_shift = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
+        
+        if is_ctrl_or_shift or axis == 1:
+            # Zoom Y-axis (price scale) -> Disables Auto-Fit
+            if self.main_window:
+                self.main_window._toggle_autofit(False)
+            self.scaleBy((1.0, s), center=(pos.x(), pos.y()))
+        else:
+            # Zoom X-axis (time scale) centered at mouse cursor
+            vr = self.viewRect()
+            new_w = vr.width() * s
+            if s < 1.0 and new_w < 3.0:  # Minimum 3 bars visible
+                return
+            
+            self.scaleBy((s, 1.0), center=(pos.x(), pos.y()))
+            if self.main_window and getattr(self.main_window, '_auto_fit_enabled', True):
+                self.main_window._auto_fit_y()
+
+        # Notify main window that the user manually changed the view
+        # so auto_scroll can be updated (prevents _redraw from overwriting zoom)
+        self.sigRangeChangedManually.emit(self.state['mouseMode'])
+
+    def mouseDragEvent(self, ev, axis=None):
+        if ev.isStart():
+            self.is_dragging = True
+            self._drag_start_pos = ev.pos()
+        elif ev.isFinish():
+            self.is_dragging = False
+            if self._drag_start_pos is not None:
+                delta = ev.pos() - self._drag_start_pos
+                # If vertical movement was significant during drag, turn off auto-fit
+                if abs(delta.y()) > 4 and abs(delta.y()) > abs(delta.x()):
+                    if self.main_window:
+                        self.main_window._toggle_autofit(False)
+            super().mouseDragEvent(ev, axis)
+            if self.main_window and getattr(self.main_window, '_auto_fit_enabled', True):
+                self.main_window._auto_fit_y()
+            return
+        super().mouseDragEvent(ev, axis)
+
+    def mouseDoubleClickEvent(self, ev):
+        if self.main_window:
+            self.main_window._toggle_autofit(True)
+        ev.accept()
+
+
+
 class OmnitrixWindow(QMainWindow):
     def __init__(self, feed: Feed, instruments: Instruments | None = None):
         super().__init__()
@@ -370,7 +459,8 @@ class OmnitrixWindow(QMainWindow):
         self.glw = pg.GraphicsLayoutWidget()
         self.setCentralWidget(self.glw)
 
-        self.price_plot = self.glw.addPlot(row=0, col=0)
+        self.price_vb = TradingViewBox(main_window=self)
+        self.price_plot = self.glw.addPlot(row=0, col=0, viewBox=self.price_vb)
         self.price_plot.showAxis("right")
         self.price_plot.hideAxis("left")
         self.price_plot.hideAxis("bottom")     # time labels live on the CVD pane
@@ -442,12 +532,25 @@ class OmnitrixWindow(QMainWindow):
         self.price_plot.sigXRangeChanged.connect(self._on_x_range_changed)
         self.price_plot.getViewBox().sigRangeChangedManually.connect(self._on_view)
         
-        # Double-click right Y-axis to trigger Auto-Fit scale reset
+        # Right Y-axis TradingView mouse drag & double-click handlers
         axis_right = self.price_plot.getAxis("right")
-        orig_dbl_click = axis_right.mouseDoubleClickEvent
+        def axis_drag(ev):
+            if ev.isStart():
+                axis_drag.last_y = ev.pos().y()
+            elif not ev.isFinish():
+                curr_y = ev.pos().y()
+                dy = curr_y - getattr(axis_drag, 'last_y', curr_y)
+                axis_drag.last_y = curr_y
+                if dy != 0:
+                    s = 1.0 + (dy / 120.0)
+                    self.price_vb.scaleBy((1.0, s))
+                    self._toggle_autofit(False)
+            ev.accept()
+        axis_right.mouseDragEvent = axis_drag
+
         def axis_dbl_click(ev):
             self._toggle_autofit(True)
-            if orig_dbl_click: orig_dbl_click(ev)
+            ev.accept()
         axis_right.mouseDoubleClickEvent = axis_dbl_click
 
         # ---- Time & Sales tape dock (right) ----
@@ -617,8 +720,11 @@ class OmnitrixWindow(QMainWindow):
             if self.auto_scroll:
                 n = len(bars)
                 vr = self.price_plot.getViewBox().viewRect()
-                if vr.right() < n + 1:
-                    self.price_plot.setXRange(max(-1, n - 22), n + 3, padding=0)
+                # Preserve the user's current zoom width instead of resetting to 22
+                view_w = max(vr.width(), 5.0)
+                right_edge = n + 3
+                left_edge = max(-1, right_edge - view_w)
+                self.price_plot.setXRange(left_edge, right_edge, padding=0)
             self._update_stats(bars[-1])
 
     def _update_overlays(self, series: BarSeries, bars: list) -> None:
@@ -626,18 +732,16 @@ class OmnitrixWindow(QMainWindow):
             self.vwap_curve.setData([], [])
             self.cvd_curve.setData([], [])
             return
-        tick = self.instruments.tick(self.active_symbol)
         vx, vy, cx, cy = [], [], [], []
         vstd = []
         cum_pv = cum_v = cum_pv2 = 0.0
         for i, b in enumerate(bars):
-            for ti, (sell_v, buy_v) in b.cells.items():
-                vol = sell_v + buy_v
-                price = ti * tick
+            vol = b.volume
+            if vol > 0:
+                price = (b.open + b.high + b.low + b.close) / 4.0
                 cum_v += vol
                 cum_pv += price * vol
                 cum_pv2 += price * price * vol
-            if cum_v > 0:
                 vwap = cum_pv / cum_v
                 var = max(0.0, cum_pv2 / cum_v - vwap * vwap)
                 vx.append(i)
@@ -889,6 +993,8 @@ class OmnitrixWindow(QMainWindow):
         self._set_drawing_tool(None)
 
     def _on_x_range_changed(self, plot, range_tuple):
+        if getattr(self.price_vb, 'is_dragging', False):
+            return
         if getattr(self, '_auto_fit_enabled', True):
             self._auto_fit_y()
 

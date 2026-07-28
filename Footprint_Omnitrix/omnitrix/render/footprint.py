@@ -109,9 +109,16 @@ class FootprintItem(pg.GraphicsObject):
         if vb is None:
             return
         px_w, px_h = vb.viewPixelSize()
-        # Only show text if a tick is >=12px tall and a box is >=35px wide (prevents severe lag when zoomed out)
-        show_text = (px_h <= tick / 12.0) and (px_w <= self.BOX_W / 35.0)
-        show_footer = (px_w <= self.BOX_W / 18.0) # Show footer summary whenever candle is >=18px wide
+        box_px = (self.BOX_W / px_w) if px_w > 0 else 0
+        tick_px = (tick / px_h) if px_h > 0 else 0
+
+        # Everything (cell colors, numbers, footer) shows together only when
+        # zoomed in enough for numbers to be readable
+        show_detail = (box_px >= 35.0) and (tick_px >= 8.0)
+        show_cells = show_detail
+        show_text = show_detail
+        show_footer = show_detail
+
         xr = vb.viewRange()[0]
         x_lo = max(0, int(xr[0]) - 1)
         x_hi = min(len(self.bars), int(xr[1]) + 2)
@@ -124,7 +131,7 @@ class FootprintItem(pg.GraphicsObject):
             cc = c_bull if bar.is_bull else c_bear
             if self.show_candles:
                 self._paint_candle(p, x, bar, cc, half, tick)
-            if self.draw_cells and bar.cells:
+            if self.draw_cells and bar.cells and show_cells:
                 self._paint_block(p, x, bar, half, tick, show_text, show_footer)
 
     def _paint_candle(self, p, x, bar, color, half, tick) -> None:
@@ -227,8 +234,10 @@ class FootprintItem(pg.GraphicsObject):
         p.setPen(pg.mkPen(color))
         rb = tr.mapRect(QRectF(x - half, y, half - 0.05, tick))
         ra = tr.mapRect(QRectF(x + 0.05, y, half - 0.05, tick))
-        p.drawText(rb, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, _fmt(sell_v))
-        p.drawText(ra, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, _fmt(buy_v))
+        align_r = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight | Qt.TextFlag.TextDontClip
+        align_l = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextDontClip
+        p.drawText(rb, align_r, _fmt(sell_v))
+        p.drawText(ra, align_l, _fmt(buy_v))
         p.restore()
 
     def _cell_one(self, p, tr, x, y, tick, half, text, color, align_left=False) -> None:
@@ -238,7 +247,8 @@ class FootprintItem(pg.GraphicsObject):
         p.setPen(pg.mkPen(color))
         r = tr.mapRect(QRectF(x - half + 0.03, y, self.BOX_W - 0.06, tick))
         align = (Qt.AlignmentFlag.AlignVCenter |
-                 (Qt.AlignmentFlag.AlignLeft if align_left else Qt.AlignmentFlag.AlignHCenter))
+                 (Qt.AlignmentFlag.AlignLeft if align_left else Qt.AlignmentFlag.AlignHCenter) |
+                 Qt.TextFlag.TextDontClip)
         p.drawText(r, align, text)
         p.restore()
 
@@ -258,19 +268,19 @@ class FootprintItem(pg.GraphicsObject):
         pt_right = tr.map(QPointF(x + half, bar.low))
         w_screen = abs(pt_right.x() - pt_left.x())
         
-        # Guaranteed un-clipped 32px screen box right below candle low
-        r = QRectF(pt_screen.x() - w_screen / 2, pt_screen.y() + 2, w_screen, 32)
+        # Wide enough screen box (min 80px) centered at candle, unclipped
+        w_box = max(w_screen, 80.0)
+        r = QRectF(pt_screen.x() - w_box / 2, pt_screen.y() + 4, w_box, 32)
         
         p.save()
         p.resetTransform()
         p.setFont(self.font)
         d = bar.delta
         p.setPen(pg.mkPen(t.delta_up if d >= 0 else t.delta_dn))
-        p.drawText(r, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
-                   f"Δ {'+' if d > 0 else ''}{_fmt(d)}")
+        align = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextDontClip
+        p.drawText(r, align, f"Δ {'+' if d > 0 else ''}{_fmt(d)}")
         p.setPen(pg.mkPen(t.cell_text))
-        p.drawText(r.adjusted(0, 14, 0, 0), Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
-                   _fmt(bar.volume))
+        p.drawText(r.adjusted(0, 14, 0, 0), align, _fmt(bar.volume))
         p.restore()
 
 
