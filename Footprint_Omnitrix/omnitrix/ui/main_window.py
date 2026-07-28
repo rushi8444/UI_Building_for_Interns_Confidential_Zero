@@ -280,6 +280,13 @@ class OmnitrixWindow(QMainWindow):
         act_dom.triggered.connect(self._open_dom)
         right_layout.addWidget(btn_tools)
 
+        btn_fullscreen = QPushButton("\ue5d0")
+        btn_fullscreen.setToolTip("Full-Screen Mode (F11)")
+        btn_fullscreen.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
+        btn_fullscreen.clicked.connect(self._toggle_fullscreen)
+        self.btn_fullscreen = btn_fullscreen
+        right_layout.addWidget(btn_fullscreen)
+
         btn_center = QPushButton("\ue3b4")
         btn_center.setToolTip("Center")
         btn_center.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
@@ -882,6 +889,30 @@ class OmnitrixWindow(QMainWindow):
         self.price_plot.setYRange(lo - margin, hi + margin, padding=0)
         self.price_plot.setXRange(max(-1, len(bars) - 22), len(bars) + 3, padding=0)
         self.auto_scroll = True
+
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
+            if hasattr(self, 'btn_fullscreen'):
+                self.btn_fullscreen.setText("\ue5d0")
+                self.btn_fullscreen.setToolTip("Full-Screen Mode (F11)")
+                self.btn_fullscreen.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
+        else:
+            self.showFullScreen()
+            if hasattr(self, 'btn_fullscreen'):
+                self.btn_fullscreen.setText("\ue5d1")
+                self.btn_fullscreen.setToolTip("Exit Full-Screen (Esc / F11)")
+                self.btn_fullscreen.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #00E676; border: none;")
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_F11:
+            self._toggle_fullscreen()
+            event.accept()
+        elif event.key() == Qt.Key.Key_Escape and self.isFullScreen():
+            self._toggle_fullscreen()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
         workspace.save(self)                  # remember the desk for next time
