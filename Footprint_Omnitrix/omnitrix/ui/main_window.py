@@ -33,6 +33,7 @@ from . import workspace
 from .tape_widget import TapeWidget
 from .stats_panel import StatsPanel
 from .signals_panel import SignalsPanel
+from .data_window import DataWindowWidget, CandleHoverPopup
 
 TF_CHOICES = {
     "10s": 10, "30s": 30, "1m": 60, "2m": 120, "3m": 180, "5m": 300,
@@ -96,7 +97,7 @@ class OmnitrixWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         import os
-        from PyQt6.QtGui import QFontDatabase
+        from PyQt6.QtGui import QFontDatabase, QFont
         font_path = os.path.join(os.path.dirname(__file__), "..", "render", "MaterialSymbolsOutlined.ttf")
         QFontDatabase.addApplicationFont(font_path)
 
@@ -313,29 +314,38 @@ class OmnitrixWindow(QMainWindow):
         self.drawing_items = []
         self._drawing_start_point = None
 
+        self._drawing_buttons = {}
+
         def add_dtb_btn(icon, tooltip, tool_name):
             btn = QPushButton(icon)
             btn.setObjectName("sidebar_icon")
             btn.setToolTip(tooltip)
-            btn.setFixedSize(36, 36)
-            btn.clicked.connect(lambda: self._set_drawing_tool(tool_name))
+            btn.setFixedSize(38, 38)
+            btn.setFont(QFont("Material Symbols Outlined", 18))
+            btn.setStyleSheet("color: #8A8A8A; background: transparent; border: 1px solid transparent; border-radius: 4px;")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, t=tool_name: self._set_drawing_tool(t))
             dtb.addWidget(btn)
+            self._drawing_buttons[tool_name] = btn
             return btn
 
-        btn_cursor = add_dtb_btn("🖱", "Cursor", None)
+        btn_cursor = add_dtb_btn("\ue836", "Cursor", None)
         btn_cursor.setObjectName("sidebar_icon_active")
 
-        add_dtb_btn("📈", "Fib Ret", "Fib")
-        add_dtb_btn("🟢", "Long Pos", "Long")
-        add_dtb_btn("🔴", "Short Pos", "Short")
-        add_dtb_btn("📊", "Vol Profile", "VP")
+        add_dtb_btn("\ue26b", "Fib Retracement", "Fib")
+        add_dtb_btn("\ue8e5", "Long Position", "Long")
+        add_dtb_btn("\ue8e3", "Short Position", "Short")
+        add_dtb_btn("\ue24b", "Volume Profile", "VP")
         
         dtb.addSeparator()
         
-        btn_clear = QPushButton("🗑")
+        btn_clear = QPushButton("\ue872")
         btn_clear.setObjectName("sidebar_icon_danger")
         btn_clear.setToolTip("Clear Drawings")
-        btn_clear.setFixedSize(36, 36)
+        btn_clear.setFixedSize(38, 38)
+        btn_clear.setFont(QFont("Material Symbols Outlined", 18))
+        btn_clear.setStyleSheet("color: #8A8A8A; background: transparent; border: 1px solid transparent; border-radius: 4px;")
+        btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_clear.clicked.connect(self._clear_drawings)
         dtb.addWidget(btn_clear)
 
@@ -439,8 +449,16 @@ class OmnitrixWindow(QMainWindow):
         self.signals_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea |
                                           Qt.DockWidgetArea.LeftDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.signals_dock)
+
+        self.hover_popup = CandleHoverPopup(self)
+        self._pending_hover_data = None
+        self._hover_timer = QTimer(self)
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.setInterval(100) # 100ms pause threshold
+        self._hover_timer.timeout.connect(self._show_hover_popup)
+
         self.tabifyDockWidget(self.tape_dock, self.signals_dock)
-        self.tape_dock.raise_()
+        self.signals_dock.raise_()
 
     # ---- theme -----------------------------------------------------------
     def _apply_theme(self) -> None:
@@ -453,7 +471,8 @@ class OmnitrixWindow(QMainWindow):
             f"QMainWindow {{ background-color:{t.bg}; }}"
             
             f" QToolBar {{ background-color:{t.panel}; border: none; border-bottom:1px solid {t.grid}; border-right:1px solid {t.grid}; padding:6px; spacing:8px; }}"
-            f" QToolBar::separator {{ background-color:{t.grid}; width:1px; height:20px; margin:0px 6px; }}"
+            f" QToolBar::separator:horizontal {{ background-color:{t.grid}; width:1px; height:20px; margin:0px 6px; }}"
+            f" QToolBar::separator:vertical {{ background-color:{t.grid}; height:1px; margin:8px 6px; }}"
             
             f" QLabel {{ color:{t.text}; font-size:12px; font-weight:600; font-family:'Inter', sans-serif; }}"
             
@@ -484,11 +503,11 @@ class OmnitrixWindow(QMainWindow):
             f" QTabBar::tab:selected {{ background-color:{t.panel}; color:{t.text}; border-top:2px solid {t.bull}; }}"
             f" QTabWidget::pane {{ border:1px solid {t.grid}; }}"
             
-            f" QPushButton#sidebar_icon {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
+            f" QPushButton#sidebar_icon {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: #8A8A8A; border: 1px solid transparent; background: transparent; }}"
             f" QPushButton#sidebar_icon:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
-            f" QPushButton#sidebar_icon_active {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #26A69A; background-color: #2A2A2A; border: none; }}"
-            f" QPushButton#sidebar_icon_danger {{ font-size: 16px; border-radius: 4px; margin: 4px; color: #8A8A8A; border: none; background: transparent; }}"
-            f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #F23645; }}"
+            f" QPushButton#sidebar_icon_active {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: #E8E8E8; background-color: #2A2A2A; border: 1px solid #3A3A3A; }}"
+            f" QPushButton#sidebar_icon_danger {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: #8A8A8A; border: 1px solid transparent; background: transparent; }}"
+            f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
         )
         for plot in (self.price_plot, self.cvd_plot):
             for ax_name in ("bottom", "right"):
@@ -747,9 +766,34 @@ class OmnitrixWindow(QMainWindow):
             self.vline.setPos(mp.x())
             self.hline.setPos(mp.y())
             
-            if self.active_drawing_tool and self._drawing_start_point:
-                # User is dragging to define the drawing bounds
-                pass
+            # Hide pop-up while cursor is moving fast to guarantee 60fps smooth movement
+            if hasattr(self, 'hover_popup'):
+                self.hover_popup.hide()
+
+            bar_idx = int(round(mp.x()))
+            if self.active_symbol and self.active_symbol in self.series:
+                series = self.series[self.active_symbol].view(self.tf_s)
+                if 0 <= bar_idx < len(series):
+                    bar = series[bar_idx]
+                    tick_size = self.instruments.tick(self.active_symbol)
+                    y_price = mp.y()
+                    margin = tick_size * 2.0
+                    if (bar.low - margin) <= y_price <= (bar.high + margin):
+                        global_pos = self.glw.mapToGlobal(pos.toPoint())
+                        self._pending_hover_data = (bar, tick_size, global_pos)
+                        self._hover_timer.start() # Reset 100ms pause timer
+                        return
+
+        # Cursor outside chart or off candle
+        self._hover_timer.stop()
+        self._pending_hover_data = None
+        if hasattr(self, 'hover_popup'):
+            self.hover_popup.hide()
+
+    def _show_hover_popup(self) -> None:
+        if self._pending_hover_data and hasattr(self, 'hover_popup'):
+            bar, tick_size, global_pos = self._pending_hover_data
+            self.hover_popup.update_bar(bar, tick_size, global_pos)
 
     def _on_mouse_click(self, ev) -> None:
         if not self.active_drawing_tool:
@@ -761,36 +805,33 @@ class OmnitrixWindow(QMainWindow):
             
         mp = self.price_plot.vb.mapSceneToView(pos)
         
-        if ev.button() == Qt.MouseButton.LeftButton:
-            if not self._drawing_start_point:
-                # First click: set start point
-                self._drawing_start_point = mp
-            else:
-                # Second click: finalize drawing
-                end_point = mp
-                start = self._drawing_start_point
-                self._drawing_start_point = None
-                
-                # Instantiate correct drawing tool
-                item = None
-                if self.active_drawing_tool == "Fib":
-                    item = FibRetracement([start.x(), start.y()], [end_point.x(), end_point.y()])
-                elif self.active_drawing_tool == "Long":
-                    item = PositionDrawer([start.x(), start.y()], [end_point.x() - start.x(), end_point.y() - start.y()], is_long=True)
-                elif self.active_drawing_tool == "Short":
-                    item = PositionDrawer([start.x(), start.y()], [end_point.x() - start.x(), end_point.y() - start.y()], is_long=False)
-                elif self.active_drawing_tool == "VP":
-                    item = FixedVolumeProfile(
-                        [start.x(), start.y()], 
-                        [end_point.x() - start.x(), end_point.y() - start.y()], 
-                        self._get_bars_for_vp, 
-                        self.instruments.tick(self.active_symbol)
-                    )
-                
-                if item:
-                    self.price_plot.addItem(item)
-                    self.drawing_items.append(item)
-                    self._set_drawing_tool(None) # Auto-revert to cursor
+        if ev.button() in (Qt.MouseButton.LeftButton, 1):
+            vr = self.price_plot.getViewBox().viewRect()
+            default_w = max(4.0, vr.width() * 0.25)
+            default_h = max(2.0, vr.height() * 0.25)
+            
+            x = mp.x()
+            y = mp.y()
+            item = None
+            
+            if self.active_drawing_tool == "Fib":
+                item = FibRetracement([x - default_w * 0.5, y - default_h * 0.5], [default_w, default_h])
+            elif self.active_drawing_tool == "Long":
+                item = PositionDrawer([x - default_w * 0.5, y - default_h * 0.5], [default_w, default_h], is_long=True)
+            elif self.active_drawing_tool == "Short":
+                item = PositionDrawer([x - default_w * 0.5, y - default_h * 0.5], [default_w, default_h], is_long=False)
+            elif self.active_drawing_tool == "VP":
+                item = FixedVolumeProfile(
+                    [x - default_w * 0.5, vr.top()],
+                    [default_w, vr.height()],
+                    self._get_bars_for_vp,
+                    self.instruments.tick(self.active_symbol)
+                )
+            
+            if item:
+                self.price_plot.addItem(item)
+                self.drawing_items.append(item)
+                self._set_drawing_tool(None) # Auto-revert to cursor
 
     def _get_bars_for_vp(self, x_min, x_max):
         if not self.active_symbol: return []
@@ -804,11 +845,16 @@ class OmnitrixWindow(QMainWindow):
     def _set_drawing_tool(self, tool_name):
         self.active_drawing_tool = tool_name
         self._drawing_start_point = None
+
+        if hasattr(self, '_drawing_buttons'):
+            for name, btn in self._drawing_buttons.items():
+                if name == tool_name:
+                    btn.setStyleSheet("color: #00E676; background-color: #2A2A2A; border: 1px solid #00E676; border-radius: 4px;")
+                else:
+                    btn.setStyleSheet("color: #8A8A8A; background: transparent; border: 1px solid transparent; border-radius: 4px;")
+
         vb = self.price_plot.getViewBox()
-        if tool_name is None:
-            vb.setMouseMode(pg.ViewBox.PanMode)
-        else:
-            vb.setMouseMode(pg.ViewBox.RectMode) # Prevents dragging from panning the chart while drawing
+        vb.setMouseMode(pg.ViewBox.PanMode)
 
     def _clear_drawings(self):
         for item in self.drawing_items:
