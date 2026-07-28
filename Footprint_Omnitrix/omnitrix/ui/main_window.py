@@ -280,6 +280,16 @@ class OmnitrixWindow(QMainWindow):
         act_dom.triggered.connect(self._open_dom)
         right_layout.addWidget(btn_tools)
 
+        self._auto_fit_enabled = True
+
+        self.btn_autofit = QPushButton("Auto-Fit")
+        self.btn_autofit.setToolTip("Toggle Auto-Fit Price Scale (Y-Axis)")
+        self.btn_autofit.setCheckable(True)
+        self.btn_autofit.setChecked(True)
+        self.btn_autofit.setStyleSheet("font-size: 11px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 2px 6px;")
+        self.btn_autofit.clicked.connect(self._toggle_autofit)
+        right_layout.addWidget(self.btn_autofit)
+
         btn_fullscreen = QPushButton("\ue5d0")
         btn_fullscreen.setToolTip("Full-Screen Mode (F11)")
         btn_fullscreen.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; color: #8A8A8A; border: none;")
@@ -429,7 +439,16 @@ class OmnitrixWindow(QMainWindow):
 
         self.glw.scene().sigMouseMoved.connect(self._on_mouse_move)
         self.glw.scene().sigMouseClicked.connect(self._on_mouse_click)
+        self.price_plot.sigXRangeChanged.connect(self._on_x_range_changed)
         self.price_plot.getViewBox().sigRangeChangedManually.connect(self._on_view)
+        
+        # Double-click right Y-axis to trigger Auto-Fit scale reset
+        axis_right = self.price_plot.getAxis("right")
+        orig_dbl_click = axis_right.mouseDoubleClickEvent
+        def axis_dbl_click(ev):
+            self._toggle_autofit(True)
+            if orig_dbl_click: orig_dbl_click(ev)
+        axis_right.mouseDoubleClickEvent = axis_dbl_click
 
         # ---- Time & Sales tape dock (right) ----
         self.tape = TapeWidget(
@@ -868,6 +887,47 @@ class OmnitrixWindow(QMainWindow):
             self.price_plot.removeItem(item)
         self.drawing_items.clear()
         self._set_drawing_tool(None)
+
+    def _on_x_range_changed(self, plot, range_tuple):
+        if getattr(self, '_auto_fit_enabled', True):
+            self._auto_fit_y()
+
+    def _auto_fit_y(self) -> None:
+        if not self.active_symbol:
+            return
+        bars = self.series[self.active_symbol].view(self.tf_s)
+        if not bars:
+            return
+        vr = self.price_plot.getViewBox().viewRect()
+        x_min = max(0, int(vr.left()))
+        x_max = min(len(bars), int(vr.right()) + 1)
+        if x_min >= x_max:
+            return
+        
+        vis = bars[x_min:x_max]
+        if not vis:
+            return
+            
+        lo = min(b.low for b in vis)
+        hi = max(b.high for b in vis)
+        margin = (hi - lo) * 0.08 or 1.0
+        self.price_plot.setYRange(lo - margin, hi + margin, padding=0)
+
+    def _toggle_autofit(self, checked=None) -> None:
+        if checked is None:
+            self._auto_fit_enabled = not getattr(self, '_auto_fit_enabled', True)
+        elif isinstance(checked, bool):
+            self._auto_fit_enabled = checked
+        else:
+            self._auto_fit_enabled = True
+            
+        if hasattr(self, 'btn_autofit'):
+            self.btn_autofit.setChecked(self._auto_fit_enabled)
+            if self._auto_fit_enabled:
+                self.btn_autofit.setStyleSheet("font-size: 11px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 2px 6px;")
+                self._auto_fit_y()
+            else:
+                self.btn_autofit.setStyleSheet("font-size: 11px; font-weight: bold; background: transparent; color: #8A8A8A; border: 1px solid transparent; border-radius: 3px; padding: 2px 6px;")
 
     def _on_view(self) -> None:
         if not self.active_symbol:
