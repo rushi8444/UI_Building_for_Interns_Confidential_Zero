@@ -145,9 +145,10 @@ class FixedVolumeProfile(pg.ROI):
         rect = self.boundingRect()
         p.drawRect(rect)
         
-        # Map ROI bounds to scene coordinates to find actual chart bar indices
-        scene_rect = self.mapRectToScene(rect)
-        x_min, x_max = scene_rect.left(), scene_rect.right()
+        pos_x = self.pos().x()
+        size_x = self.size().x()
+        x_min = min(pos_x, pos_x + size_x)
+        x_max = max(pos_x, pos_x + size_x)
         
         range_key = (round(x_min, 1), round(x_max, 1))
         if self._vp_cache_key != range_key:
@@ -173,15 +174,20 @@ class FixedVolumeProfile(pg.ROI):
         
         poc_price = max(vol_by_price, key=vol_by_price.get)
         
+        world_y = self.pos().y()
+        
         for p_lvl, vol in vol_by_price.items():
             bar_width = (vol / max_vol) * (box_width * 0.8)
-            bar_rect = QRectF(rect.right() - bar_width, p_lvl - self.tick_size/2, bar_width, self.tick_size)
+            
+            local_y = p_lvl - world_y
+            bar_rect = QRectF(rect.right() - bar_width, local_y - self.tick_size/2, bar_width, self.tick_size)
+            
             if p_lvl == poc_price:
                 p.setBrush(self.poc_brush)
                 p.drawRect(bar_rect)
                 p.setBrush(self.bar_brush)
                 p.setPen(self.poc_pen)
-                p.drawLine(QPointF(rect.left(), poc_price), QPointF(rect.right(), poc_price))
+                p.drawLine(QPointF(rect.left(), local_y), QPointF(rect.right(), local_y))
                 p.setPen(Qt.PenStyle.NoPen)
             else:
                 p.drawRect(bar_rect)
