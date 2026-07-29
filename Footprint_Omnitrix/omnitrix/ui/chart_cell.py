@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 
 from ..engine import Instruments, BarSeries, Feed, parse_timeframe, format_timeframe
 from ..engine.signals import detect_cvd_divergence
+from ..engine.spread import is_spread_formula, parse_spread_symbols, SyntheticSpreadSeries
 from ..render import (
     FootprintItem, HeatmapItem, DARK, LIGHT, TimeAxis,
     CPRItem, EMAItem
@@ -247,6 +248,8 @@ class ChartCellWidget(QWidget):
         # Symbol dropdown
         initial_sym = self.active_symbol or (self.main_window._known_symbols[0] if (self.main_window and self.main_window._known_symbols) else "QQQ")
         known_syms = list(self.main_window._known_symbols) if (self.main_window and self.main_window._known_symbols) else [initial_sym]
+        if "Custom..." not in known_syms:
+            known_syms.append("Custom...")
         self.sym_combo = MenuDropdown(initial_sym, known_syms, on_select_cb=self._on_symbol)
         hl.addWidget(self.sym_combo)
 
@@ -419,11 +422,14 @@ class ChartCellWidget(QWidget):
     def update_known_symbols(self, symbols: set[str]):
         curr = self.sym_combo.currentText()
         self.sym_combo.blockSignals(True)
+        existing_custom = [item for item in self.sym_combo._items if item not in symbols and item != "Custom..."]
         self.sym_combo.clear()
         for s in sorted(symbols):
             self.sym_combo.addItem(s)
-        if curr in symbols:
-            self.sym_combo.setCurrentText(curr)
+        for item in existing_custom:
+            self.sym_combo.addItem(item)
+        self.sym_combo.addItem("Custom...")
+        self.sym_combo.setCurrentText(curr)
         self.sym_combo.blockSignals(False)
 
     def set_symbol(self, sym: str):
@@ -445,8 +451,26 @@ class ChartCellWidget(QWidget):
         self.redraw()
 
     def _on_symbol(self, sym: str):
+        if sym == "Custom...":
+            from PyQt6.QtWidgets import QInputDialog
+            text, ok = QInputDialog.getText(self, "Custom Symbol / Spread Formula",
+                                            "Enter Ticker or Spread Formula (e.g. AAPL / SPY, QQQ - SPY):",
+                                            text=self.active_symbol)
+            if ok and text.strip():
+                sym = text.strip().upper()
+                if sym not in self.sym_combo._items:
+                    self.sym_combo.addItem(sym)
+                self.sym_combo.setCurrentText(sym)
+            else:
+                self.sym_combo.setCurrentText(self.active_symbol)
+                return
+
         if sym:
             self.active_symbol = sym
+            if is_spread_formula(sym):
+                for constituent in parse_spread_symbols(sym):
+                    if constituent not in self.main_window.series:
+                        self.main_window.series[constituent] = BarSeries(constituent, self.instruments)
             self.fp.tick = self.instruments.tick(sym)
             self._dirty = True
             self.redraw()
@@ -473,13 +497,15 @@ class ChartCellWidget(QWidget):
         self._dirty = True
         self.redraw()
 
-    def _on_mode(self, name: str):
-        fp_mode, draw_cells, hm_visible = MODES.get(name, ("Footprint", True, False))
-        self.fp.set_mode(fp_mode)
-        self.fp.set_draw_cells(draw_cells)
-        self.heatmap.setVisible(hm_visible)
-        self._dirty = True
-        self.redraw()
+    def _on_mode(self, mode_text: str):
+        if mode_text in MODES:
+            engine_mode, show_cells, show_hm = MODES[mode_text]
+            self.fp.set_mode(engine_mode)
+            self.fp.set_draw_cells(show_cells)
+            self.heatmap.setVisible(show_hm)
+            self.mode_combo.setCurrentText(mode_text)
+            self._dirty = True
+            self.redraw()
 
     def _on_toggle_imb(self, on: bool):
         self.fp.set_show_imbalance(on)
@@ -540,9 +566,20 @@ class ChartCellWidget(QWidget):
             self.btn_autofit.setStyleSheet("font-size: 10px; font-weight: bold; background: transparent; color: #8A8A8A; border: 1px solid transparent; border-radius: 3px; padding: 1px 5px;")
 
     def _auto_fit_y(self):
-        if not self.active_symbol or self.active_symbol not in self.main_window.series:
+        if not self.active_symbol:
             return
-        bars = self.main_window.series[self.active_symbol].view(self.tf_s)
+        if is_spread_formula(self.active_symbol):
+            symbols = parse_spread_symbols(self.active_symbol)
+            for sym in symbols:
+                if sym not in self.main_window.series:
+                    self.main_window.series[sym] = BarSeries(sym, self.instruments)
+            s = SyntheticSpreadSeries(self.active_symbol, self.main_window.series)
+        elif self.active_symbol in self.main_window.series:
+            s = self.main_window.series[self.active_symbol]
+        else:
+            return
+
+        bars = s.view(self.tf_s)
         if not bars:
             return
         vr = self.price_plot.getViewBox().viewRect()
@@ -586,9 +623,20 @@ class ChartCellWidget(QWidget):
         self.vline.setPos(x_val)
 
     def redraw(self):
-        if not self.active_symbol or self.active_symbol not in self.main_window.series:
+        if not self.active_symbol:
             return
-        s = self.main_window.series[self.active_symbol]
+
+        if is_spread_formula(self.active_symbol):
+            symbols = parse_spread_symbols(self.active_symbol)
+            for sym in symbols:
+                if sym not in self.main_window.series:
+                    self.main_window.series[sym] = BarSeries(sym, self.instruments)
+            s = SyntheticSpreadSeries(self.active_symbol, self.main_window.series)
+        elif self.active_symbol in self.main_window.series:
+            s = self.main_window.series[self.active_symbol]
+        else:
+            return
+
         bars = s.view(self.tf_s)
         self.fp.set_bars(bars)
         if self.heatmap.isVisible():

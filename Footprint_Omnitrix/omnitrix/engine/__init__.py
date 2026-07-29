@@ -14,6 +14,7 @@ from .recorder import Recorder, ReplayFeed, read_events
 
 from .timeframe import parse_timeframe, format_timeframe, is_tick_timeframe, get_tick_count
 from .drawing_templates import TemplateManager, TEMPLATES_PATH
+from .spread import parse_spread_symbols, is_spread_formula, evaluate_spread, SyntheticSpreadSeries
 
 __all__ = [
     "Trade",
@@ -40,4 +41,8 @@ __all__ = [
     "Recorder",
     "ReplayFeed",
     "read_events",
+    "parse_spread_symbols",
+    "is_spread_formula",
+    "evaluate_spread",
+    "SyntheticSpreadSeries",
 ]

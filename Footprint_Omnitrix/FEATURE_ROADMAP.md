@@ -15,7 +15,7 @@ This document is a comprehensive TODO list and technical specification for imple
 - [x] **7. Long & Short Position Calculators** (Risk/Reward drawing tool)
 - [x] **8. Drawing Templates** (Save & apply custom styles/colors to drawings)
 - [x] **9. Second & Tick-Based Intervals** (High-frequency sub-minute & trade-count bars)
-- [ ] **10. Custom Spread Charts (Math Formulas)** (Synthetic ratio & difference charts e.g. `AAPL/SPY`)
+- [x] **10. Custom Spread Charts (Math Formulas)** (Synthetic ratio & difference charts e.g. `AAPL/SPY`)NEEDS TESTING 
 - [ ] **11. Time Price Opportunity (TPO / Market Profile)** (Letter/period bracket charts)
 - [x] **12. Fixed Range Volume Profile (FRVP)** (TradingView-style custom range volume tool)
 - [x] **13. Cumulative Volume Delta (CVD) Enhancements** (CVD divergence, bar-color CVD, and sub-chart sync)
