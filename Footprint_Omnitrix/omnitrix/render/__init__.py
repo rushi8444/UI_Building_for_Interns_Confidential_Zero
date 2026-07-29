@@ -9,7 +9,7 @@ from .bookmap import (
     DomLadderItem, VolumeBarsItem, SRLinesItem,
 )
 from .profile import TPOItem, VolumeProfileItem
-from .drawings import FibRetracement, PositionDrawer, FixedVolumeProfile
+from .drawings import FibRetracement, PositionDrawer, FixedVolumeProfile, RangeCPR
 from .indicators import EMAItem, CPRItem
 
 __all__ = [
@@ -17,6 +17,6 @@ __all__ = [
     "BookHeatmapItem", "BBOItem", "BubbleItem", "PieItem", "BarsItem",
     "ProjectionItem", "DomLadderItem", "VolumeBarsItem", "SRLinesItem",
     "TPOItem", "VolumeProfileItem",
-    "FibRetracement", "PositionDrawer", "FixedVolumeProfile",
+    "FibRetracement", "PositionDrawer", "FixedVolumeProfile", "RangeCPR",
     "EMAItem", "CPRItem"
 ]

@@ -69,15 +69,17 @@ class EMAItem(pg.GraphicsObject):
 
 
 class CPRItem(pg.GraphicsObject):
-    """Central Pivot Range (P, TC, BC)"""
+    """Central Pivot Range (P, TC, BC, R1, S1) per session/day."""
     def __init__(self):
         super().__init__()
         self.bars = []
-        self.cpr_data = {}  # day_index -> (P, TC, BC)
+        self.sessions = []  # list of dicts: {'x_start': i, 'x_end': j, 'p': ..., 'tc': ..., 'bc': ..., 'r1': ..., 's1': ...}
         self.colors = {
-            'P': QColor(255, 64, 129),  # Pink for main pivot
-            'TC': QColor(0, 188, 212),  # Cyan for Top Central
-            'BC': QColor(0, 188, 212)   # Cyan for Bottom Central
+            'P': QColor(255, 64, 129),   # Pink for main pivot
+            'TC': QColor(0, 188, 212),   # Cyan for Top Central
+            'BC': QColor(0, 188, 212),   # Cyan for Bottom Central
+            'R1': QColor(0, 230, 118),   # Green for Resistance 1
+            'S1': QColor(255, 23, 68),    # Red for Support 1
         }
 
     def set_bars(self, bars):
@@ -86,72 +88,99 @@ class CPRItem(pg.GraphicsObject):
         self.update()
 
     def _calculate(self):
-        self.cpr_data = {}
+        self.sessions = []
         if not self.bars: return
         
-        # Calculate daily pivots. We will group by day based on timestamp.
-        # Assuming bars have a 'ts' (timestamp) or we use buckets.
-        # For simplicity in this footprint view, we'll assume standard 24h trading day resets at 00:00.
         import datetime
-        daily_high = {}
-        daily_low = {}
-        daily_close = {}
         
-        for x, b in enumerate(self.bars):
-            # BarSeries doesn't expose a raw timestamp on `Bar` easily without checking model.py
-            # But wait, usually `b` has `open, high, low, close`. What about time?
-            # In `BarSeries`, bucket is `int(ts_s // tf_s)`. We can derive time if needed.
-            pass
+        # Group bars into sessions by calendar day or fixed blocks
+        session_groups = []
+        current_day = None
+        current_group = []
+        current_start_idx = 0
         
-        # Alternatively, if we just want a simple pivot from previous N bars 
-        # (Since it's intraday, we'll calculate CPR dynamically from the first bar of the session)
-        if len(self.bars) > 0:
-            h = max(b.high for b in self.bars)
-            l = min(b.low for b in self.bars)
-            c = self.bars[-1].close
+        for idx, b in enumerate(self.bars):
+            day_key = datetime.datetime.fromtimestamp(b.start_ts).date() if hasattr(b, 'start_ts') and b.start_ts else 0
+            if current_day is None:
+                current_day = day_key
+                current_start_idx = idx
+            elif day_key != current_day:
+                session_groups.append((current_start_idx, idx - 1, current_group))
+                current_day = day_key
+                current_group = []
+                current_start_idx = idx
+            current_group.append(b)
             
-            p = (h + l + c) / 3
-            bc = (h + l) / 2
-            tc = (p - bc) + p
+        if current_group:
+            session_groups.append((current_start_idx, len(self.bars) - 1, current_group))
             
-            # Re-order so TC is always higher than BC
+        for x_start, x_end, day_bars in session_groups:
+            if not day_bars: continue
+            high = max(b.high for b in day_bars)
+            low = min(b.low for b in day_bars)
+            close = day_bars[-1].close
+            
+            pivot = (high + low + close) / 3.0
+            bc = (high + low) / 2.0
+            tc = (pivot - bc) + pivot
             if tc < bc:
                 tc, bc = bc, tc
                 
-            self.cpr_data['current'] = (p, tc, bc)
+            r1 = (2 * pivot) - low
+            s1 = (2 * pivot) - high
+            
+            self.sessions.append({
+                'x_start': x_start,
+                'x_end': x_end + 1,
+                'p': pivot,
+                'tc': tc,
+                'bc': bc,
+                'r1': r1,
+                's1': s1,
+            })
 
     def paint(self, p, opt, widget):
-        if not self.cpr_data: return
+        if not self.sessions: return
         
         view = self.getViewBox()
         if not view: return
         
-        x_min, x_max = view.viewRange()[0]
-        
-        pivot, tc, bc = self.cpr_data['current']
-        
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        font = QFont("Arial", 8, QFont.Weight.Bold)
         
-        # Draw P
-        p.setPen(pg.mkPen(self.colors['P'], width=2))
-        p.drawLine(QPointF(x_min, pivot), QPointF(x_max, pivot))
-        
-        # Draw TC
-        p.setPen(pg.mkPen(self.colors['TC'], width=1, style=Qt.PenStyle.DashLine))
-        p.drawLine(QPointF(x_min, tc), QPointF(x_max, tc))
-        
-        # Draw BC
-        p.setPen(pg.mkPen(self.colors['BC'], width=1, style=Qt.PenStyle.DashLine))
-        p.drawLine(QPointF(x_min, bc), QPointF(x_max, bc))
-        
-        # Labels
-        p.setFont(QFont("Arial", 8, QFont.Weight.Bold))
-        p.setPen(pg.mkPen(self.colors['P']))
-        p.drawText(QPointF(x_min + 5, pivot - 2), "P")
-        p.setPen(pg.mkPen(self.colors['TC']))
-        p.drawText(QPointF(x_min + 5, tc - 2), "TC")
-        p.setPen(pg.mkPen(self.colors['BC']))
-        p.drawText(QPointF(x_min + 5, bc - 2), "BC")
+        for sess in self.sessions:
+            x_start = sess['x_start']
+            x_end = sess['x_end']
+            pivot = sess['p']
+            tc = sess['tc']
+            bc = sess['bc']
+            r1 = sess['r1']
+            s1 = sess['s1']
+            
+            # P line
+            p.setPen(pg.mkPen(self.colors['P'], width=2))
+            p.drawLine(QPointF(x_start, pivot), QPointF(x_end, pivot))
+            
+            # TC / BC lines
+            p.setPen(pg.mkPen(self.colors['TC'], width=1, style=Qt.PenStyle.DashLine))
+            p.drawLine(QPointF(x_start, tc), QPointF(x_end, tc))
+            p.setPen(pg.mkPen(self.colors['BC'], width=1, style=Qt.PenStyle.DashLine))
+            p.drawLine(QPointF(x_start, bc), QPointF(x_end, bc))
+            
+            # R1 / S1 lines
+            p.setPen(pg.mkPen(self.colors['R1'], width=1, style=Qt.PenStyle.DotLine))
+            p.drawLine(QPointF(x_start, r1), QPointF(x_end, r1))
+            p.setPen(pg.mkPen(self.colors['S1'], width=1, style=Qt.PenStyle.DotLine))
+            p.drawLine(QPointF(x_start, s1), QPointF(x_end, s1))
+            
+            # Draw session labels on start of session
+            p.setFont(font)
+            p.setPen(pg.mkPen(self.colors['P']))
+            p.drawText(QPointF(x_start + 0.2, pivot - 2), "P")
+            p.setPen(pg.mkPen(self.colors['TC']))
+            p.drawText(QPointF(x_start + 0.2, tc - 2), "TC")
+            p.setPen(pg.mkPen(self.colors['BC']))
+            p.drawText(QPointF(x_start + 0.2, bc - 2), "BC")
 
     def boundingRect(self):
         if not self.bars: return pg.QtCore.QRectF()

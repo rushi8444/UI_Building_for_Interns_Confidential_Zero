@@ -109,15 +109,16 @@ class FootprintItem(pg.GraphicsObject):
         if vb is None:
             return
         px_w, px_h = vb.viewPixelSize()
-        box_px = (self.BOX_W / px_w) if px_w > 0 else 0
-        tick_px = (tick / px_h) if px_h > 0 else 0
+        px_w_abs = abs(px_w) if px_w != 0 else 0.001
+        px_h_abs = abs(px_h) if px_h != 0 else 0.001
 
-        # Everything (cell colors, numbers, footer) shows together only when
-        # zoomed in enough for numbers to be readable
-        show_detail = (box_px >= 35.0) and (tick_px >= 8.0)
-        show_cells = show_detail
-        show_text = show_detail
-        show_footer = show_detail
+        box_px = self.BOX_W / px_w_abs
+        tick_px = tick / px_h_abs
+
+        # Level-of-Detail (LOD) Thresholds:
+        show_text = (box_px >= 45.0) and (tick_px >= 4.0)
+        show_cells = show_text
+        show_footer = (box_px >= 35.0) and (tick_px >= 3.0)
 
         xr = vb.viewRange()[0]
         x_lo = max(0, int(xr[0]) - 1)
@@ -132,7 +133,7 @@ class FootprintItem(pg.GraphicsObject):
             if self.show_candles:
                 self._paint_candle(p, x, bar, cc, half, tick)
             if self.draw_cells and bar.cells and show_cells:
-                self._paint_block(p, x, bar, half, tick, show_text, show_footer)
+                self._paint_block(p, x, bar, half, tick, show_text, show_footer, tick_px)
 
     def _paint_candle(self, p, x, bar, color, half, tick) -> None:
         cx = x - half - self.CANDLE_GAP
@@ -146,12 +147,15 @@ class FootprintItem(pg.GraphicsObject):
         p.setBrush(pg.mkBrush(color))
         p.drawRect(QRectF(cx - 0.09, bot, 0.18, top - bot))
 
-    def _paint_block(self, p, x, bar, half, tick, show_text, show_footer) -> None:
+    def _paint_block(self, p, x, bar, half, tick, show_text, show_footer, tick_px=8.0) -> None:
         t = self.theme
         cells = bar.cells
         poc = bar.poc
         vah, val = bar.value_area(self.va_pct)
         mode = self.mode
+
+        font_sz = max(7, min(9, int(abs(tick_px) * 0.75)))
+        cell_font = QFont("Consolas", font_sz, QFont.Weight.Bold)
 
         buy_imb, sell_imb = (
             bar.imbalances(self.imbalance_factor, self.min_imbalance_vol)
@@ -190,7 +194,7 @@ class FootprintItem(pg.GraphicsObject):
                 p.fillRect(QRectF(x, y, half, tick), c_buy)
                 if show_text:
                     self._cell_two(p, tr, x, y, tick, half, sell_v, buy_v,
-                                   t.poc_text if is_poc else t.cell_text)
+                                   t.poc_text if is_poc else t.cell_text, font=cell_font)
 
             elif mode == "Cluster":
                 bg = QColor(t.poc_bg) if is_poc else (
@@ -198,7 +202,7 @@ class FootprintItem(pg.GraphicsObject):
                 p.fillRect(QRectF(x - half, y, self.BOX_W, tick), bg)
                 if show_text:
                     self._cell_one(p, tr, x, y, tick, half, _fmt(tot),
-                                   t.poc_text if is_poc else t.cell_text)
+                                   t.poc_text if is_poc else t.cell_text, font=cell_font)
 
             elif mode == "Profile":
                 w = self.BOX_W * (tot / max_tot)
@@ -208,7 +212,7 @@ class FootprintItem(pg.GraphicsObject):
                 p.fillRect(QRectF(x - half, y, w, tick), col)
                 if show_text:
                     self._cell_one(p, tr, x, y, tick, half, _fmt(tot), t.cell_text,
-                                   align_left=True)
+                                   align_left=True, font=cell_font)
 
             elif mode == "Delta":
                 d = buy_v - sell_v
@@ -219,7 +223,7 @@ class FootprintItem(pg.GraphicsObject):
                 p.fillRect(QRectF(x - half, y, self.BOX_W, tick), col)
                 if show_text:
                     self._cell_one(p, tr, x, y, tick, half,
-                                   f"{'+' if d > 0 else ''}{_fmt(d)}", t.cell_text)
+                                   f"{'+' if d > 0 else ''}{_fmt(d)}", t.cell_text, font=cell_font)
 
         if self.show_imbalance and mode == "Footprint":
             self._paint_stacks(p, x, tick, half, sorted(buy_imb), sorted(sell_imb))
@@ -227,10 +231,10 @@ class FootprintItem(pg.GraphicsObject):
         if show_footer:
             self._paint_footer(p, tr, x, bar, half)
 
-    def _cell_two(self, p, tr, x, y, tick, half, sell_v, buy_v, color) -> None:
+    def _cell_two(self, p, tr, x, y, tick, half, sell_v, buy_v, color, font=None) -> None:
         p.save()
         p.resetTransform()
-        p.setFont(self.font)
+        p.setFont(font or self.font)
         p.setPen(pg.mkPen(color))
         rb = tr.mapRect(QRectF(x - half, y, half - 0.05, tick))
         ra = tr.mapRect(QRectF(x + 0.05, y, half - 0.05, tick))
@@ -240,10 +244,10 @@ class FootprintItem(pg.GraphicsObject):
         p.drawText(ra, align_l, _fmt(buy_v))
         p.restore()
 
-    def _cell_one(self, p, tr, x, y, tick, half, text, color, align_left=False) -> None:
+    def _cell_one(self, p, tr, x, y, tick, half, text, color, align_left=False, font=None) -> None:
         p.save()
         p.resetTransform()
-        p.setFont(self.font)
+        p.setFont(font or self.font)
         p.setPen(pg.mkPen(color))
         r = tr.mapRect(QRectF(x - half + 0.03, y, self.BOX_W - 0.06, tick))
         align = (Qt.AlignmentFlag.AlignVCenter |

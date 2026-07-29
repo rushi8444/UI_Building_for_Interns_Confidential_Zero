@@ -9,10 +9,11 @@ from dataclasses import replace
 
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QCursor
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QLabel, QComboBox, QCheckBox, QPushButton, QWidget,
     QSizePolicy, QDockWidget, QHBoxLayout, QVBoxLayout, QFrame, QButtonGroup, QMenu,
+    QSplitter, QListView,
 )
 
 from ..engine import (
@@ -21,7 +22,7 @@ from ..engine import (
 from ..engine.model import Trade, BookSnapshot
 from ..render import (
     FootprintItem, HeatmapItem, DARK, LIGHT, TimeAxis,
-    FibRetracement, PositionDrawer, FixedVolumeProfile, EMAItem, CPRItem
+    FibRetracement, PositionDrawer, FixedVolumeProfile, RangeCPR, EMAItem, CPRItem
 )
 from .settings_dialog import SettingsDialog
 from .bookmap_window import BookmapWindow
@@ -32,8 +33,10 @@ from .dom_ladder import DomLadderWindow
 from . import workspace
 from .tape_widget import TapeWidget
 from .stats_panel import StatsPanel
+from .chart_cell import MenuDropdown
 from .signals_panel import SignalsPanel
 from .data_window import DataWindowWidget, CandleHoverPopup
+from .chart_cell import ChartCellWidget
 
 TF_CHOICES = {
     "10s": 10, "30s": 30, "1m": 60, "2m": 120, "3m": 180, "5m": 300,
@@ -49,6 +52,8 @@ MODES = {
     "Heatmap": ("Footprint", False, True),
     "Footprint + Heatmap": ("Footprint", True, True),
     "Cluster + Heatmap": ("Cluster", True, True),
+    "Profile + Heatmap": ("Profile", True, True),
+    "Delta + Heatmap": ("Delta", True, True),
 }
 
 
@@ -227,102 +232,20 @@ class OmnitrixWindow(QMainWindow):
         vsep1.setStyleSheet("color: #2A2A2A;")
         left_layout.addWidget(vsep1)
 
-        # Symbol
-        sym_lbl = QLabel("\uef7a")
-        sym_lbl.setStyleSheet("color:#26A69A; font-family: 'Material Symbols Outlined'; font-size: 18px;")
-        left_layout.addWidget(sym_lbl)
+        # Symbol dropdown kept in memory for backwards compatibility, not shown in navbar
         self.sym_combo = QComboBox()
-        self.sym_combo.setMinimumWidth(80)
+        self.sym_combo.setView(QListView())
+        self.sym_combo.setMaxVisibleItems(12)
         self.sym_combo.currentTextChanged.connect(self._on_symbol)
-        left_layout.addWidget(self.sym_combo)
-        # Timeframe
-        lbl_tf = QLabel("TF")
-        lbl_tf.setStyleSheet("color:#8A8A8A; font-size:12px; margin-left: 8px;")
-        left_layout.addWidget(lbl_tf)
-        
-        self.tf_combo = QComboBox()
-        self.tf_combo.addItems(["10s", "30s", "1m", "5m", "15m", "1h"])
-        self.tf_combo.setCurrentText("1m")
-        self.tf_combo.currentTextChanged.connect(self._on_tf)
-        left_layout.addWidget(self.tf_combo)
+        self.sym_combo.hide()
 
-        # Separator
-        vsep2 = QFrame()
-        vsep2.setFrameShape(QFrame.Shape.VLine)
-        vsep2.setStyleSheet("color: #2A2A2A; margin-left: 8px;")
-        left_layout.addWidget(vsep2)
+        # Layout Grid Selector Dropdown
+        lbl_layout = QLabel("Grid")
+        lbl_layout.setStyleSheet("color:#8A8A8A; font-size:12px; margin-left: 8px;")
+        left_layout.addWidget(lbl_layout)
 
-        # Modes Dropdown
-        lbl_mode = QLabel("Mode")
-        lbl_mode.setStyleSheet("color:#8A8A8A; font-size:12px; margin-left: 8px;")
-        left_layout.addWidget(lbl_mode)
-        
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(list(MODES))
-        self.mode_combo.currentTextChanged.connect(self._on_mode)
-        left_layout.addWidget(self.mode_combo)
-
-        # Indicators menu
-        btn_ind = QPushButton("Indicators")
-        btn_ind.setStyleSheet("color:#E8E8E8; font-family: 'Inter', sans-serif; background-color:rgba(42, 42, 42, 0.6); border:1px solid #2A2A2A; padding: 4px 16px; border-radius: 4px; font-weight: 500; font-size: 12px;")
-        menu_ind = QMenu(self)
-        btn_ind.setMenu(menu_ind)
-        left_layout.addWidget(btn_ind)
-
-        # Add all indicators to the menu instead of cluttering the bar
-        self.chk_imb = QCheckBox("Imbalance")
-        self.chk_imb.setChecked(True)
-        self.chk_imb.toggled.connect(lambda v: self.fp.set_show_imbalance(v))
-        self.chk_imb.hide()
-        
-        self.imb_combo = QComboBox()
-        self.imb_combo.addItems(["2.0", "3.0", "4.0", "5.0"])
-        self.imb_combo.setCurrentText("3.0")
-        self.imb_combo.currentTextChanged.connect(lambda s: self.fp.set_imbalance_factor(float(s)))
-        self.imb_combo.hide()
-        
-        self.chk_va = QCheckBox("Value Area")
-        self.chk_va.setChecked(True)
-        self.chk_va.toggled.connect(lambda v: self.fp.set_show_va(v))
-        self.chk_va.hide()
-        
-        self.chk_vwap = QCheckBox("VWAP")
-        self.chk_vwap.setChecked(True)
-        self.chk_vwap.toggled.connect(self._on_vwap_toggled)
-        self.chk_vwap.hide()
-        
-        self.chk_cpr = QCheckBox("CPR")
-        self.chk_cpr.setChecked(False)
-        self.chk_cpr.toggled.connect(self._on_cpr_toggled)
-        self.chk_cpr.hide()
-        
-        self.chk_ema = QCheckBox("EMAs")
-        self.chk_ema.setChecked(False)
-        self.chk_ema.toggled.connect(self._on_ema_toggled)
-        self.chk_ema.hide()
-
-        act_imb = menu_ind.addAction("Imbalance")
-        act_imb.setCheckable(True)
-        act_imb.setChecked(True)
-        act_imb.toggled.connect(self.chk_imb.setChecked)
-        
-        act_va = menu_ind.addAction("Value Area")
-        act_va.setCheckable(True)
-        act_va.setChecked(True)
-        act_va.toggled.connect(self.chk_va.setChecked)
-        
-        act_vwap = menu_ind.addAction("VWAP")
-        act_vwap.setCheckable(True)
-        act_vwap.setChecked(True)
-        act_vwap.toggled.connect(self.chk_vwap.setChecked)
-
-        act_cpr = menu_ind.addAction("CPR")
-        act_cpr.setCheckable(True)
-        act_cpr.toggled.connect(self.chk_cpr.setChecked)
-        
-        act_ema = menu_ind.addAction("EMAs")
-        act_ema.setCheckable(True)
-        act_ema.toggled.connect(self.chk_ema.setChecked)
+        self.layout_combo = MenuDropdown("1x1", ["1x1", "2x1", "1x2", "2x2"], on_select_cb=self._set_layout_mode)
+        left_layout.addWidget(self.layout_combo)
 
         nav_layout.addWidget(left_sec)
         
@@ -342,7 +265,7 @@ class OmnitrixWindow(QMainWindow):
 
         btn_theme = QPushButton("\ue518")
         btn_theme.setToolTip("Toggle Theme")
-        btn_theme.setStyleSheet("font-family: 'Material Symbols Outlined'; font-size: 20px; background: transparent; border: none;")
+        btn_theme.setStyleSheet("color: #8A8A8A; background: transparent; font-size: 20px; border: 1px solid transparent; border-radius: 4px;")
         btn_theme.clicked.connect(lambda: self.theme_combo.setCurrentText("Light" if self.theme_combo.currentText()=="Dark" else "Dark"))
         right_layout.addWidget(btn_theme)
 
@@ -442,6 +365,7 @@ class OmnitrixWindow(QMainWindow):
         add_dtb_btn("\ue8e5", "Long Position", "Long")
         add_dtb_btn("\ue8e3", "Short Position", "Short")
         add_dtb_btn("\ue24b", "Volume Profile", "VP")
+        add_dtb_btn("\ue8d4", "CPR Range Tool", "CPR")
         
         dtb.addSeparator()
         
@@ -455,103 +379,14 @@ class OmnitrixWindow(QMainWindow):
         btn_clear.clicked.connect(self._clear_drawings)
         dtb.addWidget(btn_clear)
 
-        # ---- two linked panes: price (top), CVD (bottom) ----
-        self.glw = pg.GraphicsLayoutWidget()
-        self.setCentralWidget(self.glw)
+        # ---- Grid Layout Container for Multi-Chart Panes ----
+        self.layout_container = QWidget()
+        self.central_layout = QVBoxLayout(self.layout_container)
+        self.central_layout.setContentsMargins(0, 0, 0, 0)
+        self.setCentralWidget(self.layout_container)
 
-        self.price_vb = TradingViewBox(main_window=self)
-        self.price_plot = self.glw.addPlot(row=0, col=0, viewBox=self.price_vb)
-        self.price_plot.showAxis("right")
-        self.price_plot.hideAxis("left")
-        self.price_plot.hideAxis("bottom")     # time labels live on the CVD pane
-        self.price_plot.showGrid(x=True, y=True, alpha=0.25)
-
-        self.time_axis = TimeAxis(orientation="bottom")
-        self.cvd_plot = self.glw.addPlot(row=1, col=0,
-                                         axisItems={"bottom": self.time_axis})
-        self.cvd_plot.showAxis("right")
-        self.cvd_plot.hideAxis("left")
-        self.cvd_plot.showGrid(x=True, y=True, alpha=0.2)
-        self.cvd_plot.setXLink(self.price_plot)
-        self.glw.ci.layout.setRowStretchFactor(0, 4)
-        self.glw.ci.layout.setRowStretchFactor(1, 1)
-
-        self.heatmap = HeatmapItem(self.instruments.tick("QQQ"))
-        self.heatmap.setVisible(False)
-        self.price_plot.addItem(self.heatmap)
-
-        self.fp = FootprintItem(self.instruments.tick("QQQ"), self.theme)
-        self.price_plot.addItem(self.fp)
-
-        # Indicators
-        self.cpr_item = CPRItem()
-        self.cpr_item.setVisible(False)
-        self.price_plot.addItem(self.cpr_item)
-
-        self.ema9_item = EMAItem(period=9, color=QColor(33, 150, 243))
-        self.ema21_item = EMAItem(period=21, color=QColor(255, 193, 7))
-        self.ema9_item.setVisible(False)
-        self.ema21_item.setVisible(False)
-        self.price_plot.addItem(self.ema9_item)
-        self.price_plot.addItem(self.ema21_item)
-
-        self.vwap_curve = pg.PlotDataItem(pen=pg.mkPen(self.theme.vwap, width=2))
-        self.price_plot.addItem(self.vwap_curve)
-
-        # VWAP standard-deviation bands (±1σ, ±2σ) — institutional mean-reversion
-        # envelope; price outside ±2σ is statistically stretched.
-        self.vwap_bands = []
-        for mult, alpha, dash in ((1, 150, Qt.PenStyle.DashLine),
-                                  (2, 90, Qt.PenStyle.DotLine)):
-            for _ in range(2):                    # upper + lower
-                c = pg.PlotDataItem(pen=pg.mkPen(self.theme.vwap, width=1,
-                                                 style=dash))
-                c.setOpacity(alpha / 255.0)
-                self.price_plot.addItem(c)
-                self.vwap_bands.append((mult, c))
-
-        self.cvd_curve = pg.PlotDataItem(pen=pg.mkPen(self.theme.cvd, width=2))
-        self.cvd_plot.addItem(self.cvd_curve)
-        self.cvd_zero = pg.InfiniteLine(angle=0, pos=0, movable=False,
-                                        pen=pg.mkPen("#666", style=Qt.PenStyle.DashLine))
-        self.cvd_plot.addItem(self.cvd_zero, ignoreBounds=True)
-
-        self.price_line = pg.InfiniteLine(angle=0, movable=False,
-                                          pen=pg.mkPen(self.theme.cvd, width=1,
-                                                       style=Qt.PenStyle.DashLine))
-        self.price_plot.addItem(self.price_line, ignoreBounds=True)
-        self.vline = pg.InfiniteLine(angle=90, movable=False,
-                                     pen=pg.mkPen("#666", style=Qt.PenStyle.DashLine))
-        self.hline = pg.InfiniteLine(angle=0, movable=False,
-                                     pen=pg.mkPen("#666", style=Qt.PenStyle.DashLine))
-        self.price_plot.addItem(self.vline, ignoreBounds=True)
-        self.price_plot.addItem(self.hline, ignoreBounds=True)
-
-        self.glw.scene().sigMouseMoved.connect(self._on_mouse_move)
-        self.glw.scene().sigMouseClicked.connect(self._on_mouse_click)
-        self.price_plot.sigXRangeChanged.connect(self._on_x_range_changed)
-        self.price_plot.getViewBox().sigRangeChangedManually.connect(self._on_view)
-        
-        # Right Y-axis TradingView mouse drag & double-click handlers
-        axis_right = self.price_plot.getAxis("right")
-        def axis_drag(ev):
-            if ev.isStart():
-                axis_drag.last_y = ev.pos().y()
-            elif not ev.isFinish():
-                curr_y = ev.pos().y()
-                dy = curr_y - getattr(axis_drag, 'last_y', curr_y)
-                axis_drag.last_y = curr_y
-                if dy != 0:
-                    s = 1.0 + (dy / 120.0)
-                    self.price_vb.scaleBy((1.0, s))
-                    self._toggle_autofit(False)
-            ev.accept()
-        axis_right.mouseDragEvent = axis_drag
-
-        def axis_dbl_click(ev):
-            self._toggle_autofit(True)
-            ev.accept()
-        axis_right.mouseDoubleClickEvent = axis_dbl_click
+        self.cells: list[ChartCellWidget] = []
+        self._set_layout_mode("1x1")
 
         # ---- Time & Sales tape dock (right) ----
         self.tape = TapeWidget(
@@ -561,12 +396,14 @@ class OmnitrixWindow(QMainWindow):
         )
         self.stats = StatsPanel(self)
         self.stats_dock = QDockWidget("Session Statistics", self)
+        self.stats_dock.setObjectName("stats_dock")
         self.stats_dock.setWidget(self.stats)
         self.stats_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea |
                                         Qt.DockWidgetArea.RightDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.stats_dock)
 
         self.tape_dock = QDockWidget("Time & Sales", self)
+        self.tape_dock.setObjectName("tape_dock")
         self.tape_dock.setWidget(self.tape)
         self.tape_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea |
                                        Qt.DockWidgetArea.LeftDockWidgetArea)
@@ -574,6 +411,7 @@ class OmnitrixWindow(QMainWindow):
 
         self.signals = SignalsPanel(self)
         self.signals_dock = QDockWidget("Order-Flow Signals", self)
+        self.signals_dock.setObjectName("signals_dock")
         self.signals_dock.setWidget(self.signals)
         self.signals_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea |
                                           Qt.DockWidgetArea.LeftDockWidgetArea)
@@ -589,13 +427,154 @@ class OmnitrixWindow(QMainWindow):
         self.tabifyDockWidget(self.tape_dock, self.signals_dock)
         self.signals_dock.raise_()
 
+    # ---- Property Delegates for single-cell compatibility ----
+    @property
+    def price_plot(self):
+        return self.cells[0].price_plot if self.cells else None
+
+    @property
+    def price_vb(self):
+        return self.cells[0].price_vb if self.cells else None
+
+    @property
+    def fp(self):
+        return self.cells[0].fp if self.cells else None
+
+    @property
+    def heatmap(self):
+        return self.cells[0].heatmap if self.cells else None
+
+    @property
+    def cpr_item(self):
+        return self.cells[0].cpr_item if self.cells else None
+
+    @property
+    def ema9_item(self):
+        return self.cells[0].ema9_item if self.cells else None
+
+    @property
+    def ema21_item(self):
+        return self.cells[0].ema21_item if self.cells else None
+
+    @property
+    def vwap_curve(self):
+        return self.cells[0].vwap_curve if self.cells else None
+
+    @property
+    def vwap_bands(self):
+        return self.cells[0].vwap_bands if self.cells else ([], [])
+
+    @property
+    def cvd_curve(self):
+        return self.cells[0].cvd_curve if self.cells else None
+
+    # ---- Grid Layout Management ----
+    def _set_layout_mode(self, mode: str) -> None:
+        self.layout_mode = mode
+        if hasattr(self, 'layout_combo') and self.layout_combo and self.layout_combo.currentText() != mode:
+            self.layout_combo.setCurrentText(mode)
+        while self.central_layout.count():
+            item = self.central_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        self.cells.clear()
+        symbols_list = list(sorted(self._known_symbols)) or ["QQQ", "AAPL", "SPY"]
+
+        if mode == "1x1":
+            cell = ChartCellWidget(self, cell_id=1)
+            cell.sigCrosshairMoved.connect(self._broadcast_crosshair)
+            cell.sigCloseRequested.connect(self._on_cell_close_requested)
+            cell.update_known_symbols(self._known_symbols)
+            if self.active_symbol:
+                cell.set_symbol(self.active_symbol)
+            self.cells.append(cell)
+            self.central_layout.addWidget(cell)
+
+        elif mode == "2x1":
+            splitter = QSplitter(Qt.Orientation.Horizontal)
+            for i in range(2):
+                sym = symbols_list[i % len(symbols_list)]
+                cell = ChartCellWidget(self, cell_id=i+1)
+                cell.update_known_symbols(self._known_symbols)
+                cell.set_symbol(sym)
+                cell.sigCrosshairMoved.connect(self._broadcast_crosshair)
+                cell.sigCloseRequested.connect(self._on_cell_close_requested)
+                self.cells.append(cell)
+                splitter.addWidget(cell)
+            self.central_layout.addWidget(splitter)
+
+        elif mode == "1x2":
+            splitter = QSplitter(Qt.Orientation.Vertical)
+            for i in range(2):
+                sym = symbols_list[i % len(symbols_list)]
+                cell = ChartCellWidget(self, cell_id=i+1)
+                cell.update_known_symbols(self._known_symbols)
+                cell.set_symbol(sym)
+                cell.sigCrosshairMoved.connect(self._broadcast_crosshair)
+                cell.sigCloseRequested.connect(self._on_cell_close_requested)
+                self.cells.append(cell)
+                splitter.addWidget(cell)
+            self.central_layout.addWidget(splitter)
+
+        elif mode == "2x2":
+            v_splitter = QSplitter(Qt.Orientation.Vertical)
+            h1 = QSplitter(Qt.Orientation.Horizontal)
+            h2 = QSplitter(Qt.Orientation.Horizontal)
+            for i in range(4):
+                sym = symbols_list[i % len(symbols_list)]
+                cell = ChartCellWidget(self, cell_id=i+1)
+                cell.update_known_symbols(self._known_symbols)
+                cell.set_symbol(sym)
+                cell.sigCrosshairMoved.connect(self._broadcast_crosshair)
+                cell.sigCloseRequested.connect(self._on_cell_close_requested)
+                self.cells.append(cell)
+                if i < 2:
+                    h1.addWidget(cell)
+                else:
+                    h2.addWidget(cell)
+            v_splitter.addWidget(h1)
+            v_splitter.addWidget(h2)
+            self.central_layout.addWidget(v_splitter)
+
+        self._redraw()
+
+    def _broadcast_crosshair(self, x_val: float, y_val: float, source_cell) -> None:
+        for cell in self.cells:
+            if cell != source_cell:
+                cell.set_external_crosshair(x_val, y_val)
+
+    def _on_cell_close_requested(self, cell) -> None:
+        if len(self.cells) > 1:
+            self.cells.remove(cell)
+            cell.deleteLater()
+
+            # Re-index cell badges for remaining cells
+            for idx, c in enumerate(self.cells):
+                c.cell_id = idx + 1
+                c.lbl_cell_num.setText(f"#{c.cell_id}")
+
+            # Sync grid layout dropdown text with remaining cell count
+            n = len(self.cells)
+            if n == 1:
+                self.layout_mode = "1x1"
+                self.layout_combo.setCurrentText("1x1")
+            elif n == 2:
+                if self.layout_mode not in ("2x1", "1x2"):
+                    self.layout_mode = "2x1"
+                self.layout_combo.setCurrentText(self.layout_mode)
+            elif n == 3:
+                self.layout_combo.setCurrentText("2x2")
+
+            self._redraw()
+
     # ---- theme -----------------------------------------------------------
     def _apply_theme(self) -> None:
         t = self.theme
-        self.fp.set_theme(t)
-        self.vwap_curve.setPen(pg.mkPen(t.vwap, width=2))
-        self.cvd_curve.setPen(pg.mkPen(t.cvd, width=2))
-        self.glw.setBackground(t.bg)
+        for cell in self.cells:
+            cell.theme = t
+            cell._apply_theme()
         self.setStyleSheet(
             f"QMainWindow {{ background-color:{t.bg}; }}"
             
@@ -603,6 +582,7 @@ class OmnitrixWindow(QMainWindow):
             f" QToolBar::separator:horizontal {{ background-color:{t.grid}; width:1px; height:20px; margin:0px 6px; }}"
             f" QToolBar::separator:vertical {{ background-color:{t.grid}; height:1px; margin:8px 6px; }}"
             
+            f" QToolTip {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; border-radius:4px; padding:4px 8px; font-family:'Inter', 'Segoe UI', Arial, sans-serif; font-size:12px; font-weight:500; }}"
             f" QLabel {{ color:{t.text}; font-size:12px; font-weight:600; font-family:'Inter', sans-serif; }}"
             
             f" QCheckBox {{ color:{t.text}; font-size:12px; font-weight:600; spacing:6px; font-family:'Inter', sans-serif; }}"
@@ -638,11 +618,6 @@ class OmnitrixWindow(QMainWindow):
             f" QPushButton#sidebar_icon_danger {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: #8A8A8A; border: 1px solid transparent; background: transparent; }}"
             f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
         )
-        for plot in (self.price_plot, self.cvd_plot):
-            for ax_name in ("bottom", "right"):
-                ax = plot.getAxis(ax_name)
-                ax.setPen(pg.mkPen(t.axis))
-                ax.setTextPen(pg.mkPen(t.text))
 
     # ---- feed drain + redraw (GUI thread) --------------------------------
     def _tick(self) -> None:
@@ -671,8 +646,6 @@ class OmnitrixWindow(QMainWindow):
                     if ev.symbol == self.active_symbol:
                         self._dirty = True
 
-        # Refresh the live indicator ~2x/sec even when no data is flowing, so
-        # "waiting for Takion" is visible before the first tick arrives.
         self._link_tick = getattr(self, "_link_tick", 0) + 1
         if self._link_tick % 15 == 0:
             self._update_link()
@@ -690,42 +663,30 @@ class OmnitrixWindow(QMainWindow):
         self.sym_combo.blockSignals(True)
         self.sym_combo.addItem(sym)
         self.sym_combo.blockSignals(False)
-        # prefer the symbol restored from the saved workspace once it arrives
+        for cell in self.cells:
+            cell.update_known_symbols(self._known_symbols)
+
         if self._pending_symbol and sym == self._pending_symbol:
             self._pending_symbol = ""
             self.active_symbol = sym
             self.sym_combo.setCurrentText(sym)
-            self.fp.tick = self.instruments.tick(sym)
+            if self.cells:
+                self.cells[0].set_symbol(sym)
             self._dirty = True
         elif not self.active_symbol:
             self.active_symbol = sym
             self.sym_combo.setCurrentText(sym)
-            self.fp.tick = self.instruments.tick(sym)
+            if self.cells:
+                self.cells[0].set_symbol(sym)
 
     def _redraw(self) -> None:
-        s = self.series[self.active_symbol]
-        bars = s.view(self.tf_s)
-        self.fp.set_bars(bars)
-        if self.heatmap.isVisible():
-            self.heatmap.set_bars(bars)
-        self.time_axis.set_bars(bars)
-        
-        if self.cpr_item.isVisible(): self.cpr_item.set_bars(bars)
-        if self.ema9_item.isVisible(): self.ema9_item.set_bars(bars)
-        if self.ema21_item.isVisible(): self.ema21_item.set_bars(bars)
-        
-        self._update_overlays(s, bars)
-        if bars:
-            self.price_line.setPos(bars[-1].close)
-            if self.auto_scroll:
-                n = len(bars)
-                vr = self.price_plot.getViewBox().viewRect()
-                # Preserve the user's current zoom width instead of resetting to 22
-                view_w = max(vr.width(), 5.0)
-                right_edge = n + 3
-                left_edge = max(-1, right_edge - view_w)
-                self.price_plot.setXRange(left_edge, right_edge, padding=0)
-            self._update_stats(bars[-1])
+        for cell in self.cells:
+            cell.redraw()
+
+        if self.active_symbol and self.active_symbol in self.series:
+            bars = self.series[self.active_symbol].view(self.tf_s)
+            if bars:
+                self._update_stats(bars[-1])
 
     def _update_overlays(self, series: BarSeries, bars: list) -> None:
         if not bars:
@@ -790,31 +751,23 @@ class OmnitrixWindow(QMainWindow):
             self.auto_scroll = True
             self._dirty = True
 
+    @property
+    def tf_combo(self):
+        return self.cells[0].tf_combo if self.cells else None
+
+    @property
+    def mode_combo(self):
+        return self.cells[0].mode_combo if self.cells else None
+
     def _on_tf(self, txt: str) -> None:
         self.tf_s = TF_CHOICES.get(txt, 60)
-        self.auto_scroll = True
-        self._dirty = True
-
-    def _on_vwap_toggled(self, on: bool) -> None:
-        self.vwap_curve.setVisible(on)
-        for _, c in self.vwap_bands:
-            c.setVisible(on)
-        self._dirty = True
-
-    def _on_cpr_toggled(self, on: bool) -> None:
-        self.cpr_item.setVisible(on)
-        self._dirty = True
-
-    def _on_ema_toggled(self, on: bool) -> None:
-        self.ema9_item.setVisible(on)
-        self.ema21_item.setVisible(on)
+        for c in self.cells:
+            c.set_timeframe(txt)
         self._dirty = True
 
     def _on_mode(self, name: str) -> None:
-        fp_mode, draw_cells, hm_visible = MODES.get(name, ("Footprint", True, False))
-        self.fp.set_mode(fp_mode)
-        self.fp.set_draw_cells(draw_cells)
-        self.heatmap.setVisible(hm_visible)
+        for c in self.cells:
+            c.mode_combo.setCurrentText(name)
         self._dirty = True
 
     def _bookmap(self, sym: str) -> BookmapBuffer:
@@ -890,28 +843,23 @@ class OmnitrixWindow(QMainWindow):
         self._apply_theme()
         self._dirty = True
 
-    def _on_mouse_move(self, pos) -> None:
-        if self.price_plot.sceneBoundingRect().contains(pos):
-            mp = self.price_plot.vb.mapSceneToView(pos)
-            self.vline.setPos(mp.x())
-            self.hline.setPos(mp.y())
-            
-            # Hide pop-up while cursor is moving fast to guarantee 60fps smooth movement
-            if hasattr(self, 'hover_popup'):
-                self.hover_popup.hide()
-
+    def _on_cell_mouse_move(self, cell, pos) -> None:
+        if cell.price_plot and cell.price_plot.sceneBoundingRect().contains(pos):
+            mp = cell.price_plot.vb.mapSceneToView(pos)
             bar_idx = int(round(mp.x()))
-            if self.active_symbol and self.active_symbol in self.series:
-                series = self.series[self.active_symbol].view(self.tf_s)
+            sym = cell.active_symbol or self.active_symbol
+            tf_s = cell.tf_s or self.tf_s
+            if sym and sym in self.series:
+                series = self.series[sym].view(tf_s)
                 if 0 <= bar_idx < len(series):
                     bar = series[bar_idx]
-                    tick_size = self.instruments.tick(self.active_symbol)
+                    tick_size = self.instruments.tick(sym)
                     y_price = mp.y()
-                    margin = tick_size * 2.0
+                    margin = max(tick_size * 2.0, (bar.high - bar.low) * 0.1)
                     if (bar.low - margin) <= y_price <= (bar.high + margin):
-                        global_pos = self.glw.mapToGlobal(pos.toPoint())
+                        global_pos = QCursor.pos()
                         self._pending_hover_data = (bar, tick_size, global_pos)
-                        self._hover_timer.start() # Reset 100ms pause timer
+                        self._show_hover_popup()
                         return
 
         # Cursor outside chart or off candle
@@ -920,29 +868,39 @@ class OmnitrixWindow(QMainWindow):
         if hasattr(self, 'hover_popup'):
             self.hover_popup.hide()
 
+    def _on_mouse_move(self, pos) -> None:
+        if self.cells:
+            self._on_cell_mouse_move(self.cells[0], pos)
+
     def _show_hover_popup(self) -> None:
         if self._pending_hover_data and hasattr(self, 'hover_popup'):
             bar, tick_size, global_pos = self._pending_hover_data
             self.hover_popup.update_bar(bar, tick_size, global_pos)
 
     def _on_mouse_click(self, ev) -> None:
+        if self.cells:
+            self._on_cell_mouse_click(self.cells[0], ev)
+
+    def _on_cell_mouse_click(self, cell, ev) -> None:
         if not self.active_drawing_tool:
             return
             
         pos = ev.scenePos()
-        if not self.price_plot.sceneBoundingRect().contains(pos):
+        if not cell.price_plot or not cell.price_plot.sceneBoundingRect().contains(pos):
             return
             
-        mp = self.price_plot.vb.mapSceneToView(pos)
+        mp = cell.price_plot.vb.mapSceneToView(pos)
         
         if ev.button() in (Qt.MouseButton.LeftButton, 1):
-            vr = self.price_plot.getViewBox().viewRect()
+            vr = cell.price_plot.getViewBox().viewRect()
             default_w = max(4.0, vr.width() * 0.25)
             default_h = max(2.0, vr.height() * 0.25)
             
             x = mp.x()
             y = mp.y()
             item = None
+            sym = cell.active_symbol or self.active_symbol or "QQQ"
+            tick_size = self.instruments.tick(sym)
             
             if self.active_drawing_tool == "Fib":
                 item = FibRetracement([x - default_w * 0.5, y - default_h * 0.5], [default_w, default_h])
@@ -954,20 +912,26 @@ class OmnitrixWindow(QMainWindow):
                 item = FixedVolumeProfile(
                     [x - default_w * 0.5, vr.top()],
                     [default_w, vr.height()],
-                    self._get_bars_for_vp,
-                    self.instruments.tick(self.active_symbol)
+                    lambda x_min, x_max, s=sym: self._get_bars_for_vp(x_min, x_max, s),
+                    tick_size
+                )
+            elif self.active_drawing_tool == "CPR":
+                item = RangeCPR(
+                    [x - default_w * 0.5, vr.top()],
+                    [default_w, vr.height()],
+                    lambda x_min, x_max, s=sym: self._get_bars_for_vp(x_min, x_max, s),
+                    tick_size
                 )
             
             if item:
-                self.price_plot.addItem(item)
-                self.drawing_items.append(item)
+                cell.price_plot.addItem(item)
+                self.drawing_items.append((cell.price_plot, item))
                 self._set_drawing_tool(None) # Auto-revert to cursor
 
-    def _get_bars_for_vp(self, x_min, x_max):
-        if not self.active_symbol: return []
-        bars = self.series[self.active_symbol].view(self.tf_s)
-        # filter bars within x_min and x_max
-        # Since x-axis is bar index:
+    def _get_bars_for_vp(self, x_min, x_max, symbol=None):
+        sym = symbol or self.active_symbol
+        if not sym or sym not in self.series: return []
+        bars = self.series[sym].view(self.tf_s)
         start_idx = max(0, int(x_min))
         end_idx = min(len(bars), int(x_max) + 1)
         return bars[start_idx:end_idx]
@@ -983,12 +947,23 @@ class OmnitrixWindow(QMainWindow):
                 else:
                     btn.setStyleSheet("color: #8A8A8A; background: transparent; border: 1px solid transparent; border-radius: 4px;")
 
-        vb = self.price_plot.getViewBox()
-        vb.setMouseMode(pg.ViewBox.PanMode)
+        if self.price_plot and self.price_plot.getViewBox():
+            self.price_plot.getViewBox().setMouseMode(pg.ViewBox.PanMode)
 
     def _clear_drawings(self):
-        for item in self.drawing_items:
-            self.price_plot.removeItem(item)
+        for entry in self.drawing_items:
+            if isinstance(entry, tuple):
+                plot, item = entry
+                try:
+                    plot.removeItem(item)
+                except Exception:
+                    pass
+            else:
+                if self.price_plot:
+                    try:
+                        self.price_plot.removeItem(entry)
+                    except Exception:
+                        pass
         self.drawing_items.clear()
         self._set_drawing_tool(None)
 
@@ -1043,18 +1018,20 @@ class OmnitrixWindow(QMainWindow):
         self.auto_scroll = vr.right() >= len(bars) - 1.0
 
     def _center(self) -> None:
-        if not self.active_symbol:
-            return
-        bars = self.series[self.active_symbol].view(self.tf_s)
-        if not bars:
-            return
-        vis = bars[-24:]
-        lo = min(b.low for b in vis)
-        hi = max(b.high for b in vis)
-        margin = (hi - lo) * 0.12 or 1.0
-        self.price_plot.setYRange(lo - margin, hi + margin, padding=0)
-        self.price_plot.setXRange(max(-1, len(bars) - 22), len(bars) + 3, padding=0)
-        self.auto_scroll = True
+        for cell in getattr(self, 'cells', []):
+            if not cell.active_symbol or cell.active_symbol not in self.series:
+                continue
+            bars = self.series[cell.active_symbol].view(cell.tf_s)
+            if not bars:
+                continue
+            cell.auto_scroll = True
+            cell._auto_fit_enabled = True
+            cell.btn_autofit.setChecked(True)
+            cell.btn_autofit.setStyleSheet("font-size: 10px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 1px 5px;")
+            n = len(bars)
+            cell.price_plot.setXRange(max(-1, n - 22), n + 3, padding=0)
+            cell._auto_fit_y()
+            cell.redraw()
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():

@@ -6,9 +6,9 @@ This document is a comprehensive TODO list and technical specification for imple
 
 ## 📊 Summary Check & Progress Tracker
 
-- [ ] **1. Multi-Chart Layouts** (Split-screen 2x1, 1x2, 2x2 grids)
+- [x] **1. Multi-Chart Layouts** (Split-screen 2x1, 1x2, 2x2 grids)
 - [ ] **2. Custom Timeframes** (Arbitrary minute/hour bar aggregations)
-- [ ] **3. Crosshair Synchronization** (Sync cursor across all open charts & timeframes)
+- [x] **3. Crosshair Synchronization** (Sync cursor across all open charts & timeframes)
 - [x] **4. Auto-Fit Scale** (Dynamic Y-axis price auto-scaling & reset)
 - [x] **5. Full-Screen Mode** (F11 / Immersive chart maximize)
 - [x] **6. Data Window** (Hover inspector for OHLC, Delta, POC, Imbalances)
