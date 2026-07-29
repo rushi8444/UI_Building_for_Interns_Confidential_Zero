@@ -1,11 +1,26 @@
 import pyqtgraph as pg
 from pyqtgraph.GraphicsScene.mouseEvents import MouseClickEvent, MouseDragEvent
-from PyQt6.QtCore import Qt, QRectF, QPointF
+from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal
 from PyQt6.QtGui import QColor, QPen, QBrush, QPainter, QFont
 
 FONT_LABEL = QFont("Arial", 9, QFont.Weight.Bold)
 
-class FibRetracement(pg.ROI):
+class BaseDrawingROI(pg.ROI):
+    """Base ROI drawing class with right-click context menu signal."""
+    sigRightClicked = pyqtSignal(object, object)
+
+    def mouseClickEvent(self, ev):
+        if ev.button() in (Qt.MouseButton.RightButton, 2):
+            ev.accept()
+            self.sigRightClicked.emit(self, ev)
+        else:
+            super().mouseClickEvent(ev)
+
+    def raiseContextMenu(self, ev):
+        ev.accept()
+        self.sigRightClicked.emit(self, ev)
+
+class FibRetracement(BaseDrawingROI):
     """Fibonacci Retracement tool (0, 0.236, 0.382, 0.5, 0.618, 0.786, 1)"""
     def __init__(self, pos, size, **kwargs):
         super().__init__(pos, size=size, **kwargs)
@@ -17,6 +32,32 @@ class FibRetracement(pg.ROI):
             QColor(0, 230, 118), QColor(33, 150, 243), QColor(156, 39, 176), QColor(120, 123, 134)
         ]
         self.pens = [pg.mkPen(col, width=1, style=Qt.PenStyle.DashLine) for col in self.colors]
+        self.show_labels = True
+
+    def get_style(self) -> dict:
+        return {
+            "line_color": self.colors[2].name().upper() if hasattr(self.colors[2], 'name') else "#26A69A",
+            "line_width": self.pens[0].width(),
+            "line_style": "Solid" if self.pens[0].style() == Qt.PenStyle.SolidLine else "Dashed",
+            "fill_alpha": getattr(self, "fill_alpha", 30),
+            "show_labels": getattr(self, "show_labels", True),
+        }
+
+    def apply_style(self, style: dict) -> None:
+        if "line_color" in style:
+            base_col = QColor(style["line_color"])
+            width = int(style.get("line_width", 1))
+            p_style = Qt.PenStyle.SolidLine if style.get("line_style") == "Solid" else Qt.PenStyle.DashLine
+            self.colors = [
+                QColor(120, 123, 134), QColor(244, 67, 54), base_col,
+                QColor(0, 230, 118), base_col, QColor(156, 39, 176), QColor(120, 123, 134)
+            ]
+            self.pens = [pg.mkPen(col, width=width, style=p_style) for col in self.colors]
+        if "fill_alpha" in style:
+            self.fill_alpha = int(style["fill_alpha"])
+        if "show_labels" in style:
+            self.show_labels = bool(style["show_labels"])
+        self.update()
 
     def paint(self, p, opt, widget):
         handles = self.getHandles()
@@ -51,8 +92,9 @@ class FibRetracement(pg.ROI):
             p.drawText(screen_pt + QPointF(6, -4), f"{lvl:.3f} ({price_lvl:,.2f})")
             p.restore()
 
-class PositionDrawer(pg.ROI):
+class PositionDrawer(BaseDrawingROI):
     """TradingView style Long/Short position risk/reward drawer."""
+
     def __init__(self, pos, size, is_long=True, **kwargs):
         super().__init__(pos, size, **kwargs)
         self.is_long = is_long
@@ -68,6 +110,35 @@ class PositionDrawer(pg.ROI):
         self.sl_brush = QBrush(self.sl_color)
         self.entry_pen = pg.mkPen('#FFFFFF' if self.is_long else '#000000', width=2)
         self.white_pen = pg.mkPen('#FFFFFF')
+        self.show_labels = True
+
+    def get_style(self) -> dict:
+        return {
+            "target_color": self.tp_color.name().upper(),
+            "stop_color": self.sl_color.name().upper(),
+            "box_alpha": self.tp_color.alpha(),
+            "line_width": self.entry_pen.width(),
+            "show_labels": getattr(self, "show_labels", True),
+        }
+
+    def apply_style(self, style: dict) -> None:
+        alpha = int(style.get("box_alpha", 50))
+        if "target_color" in style:
+            c = QColor(style["target_color"])
+            c.setAlpha(alpha)
+            self.tp_color = c
+            self.tp_brush = QBrush(c)
+        if "stop_color" in style:
+            c = QColor(style["stop_color"])
+            c.setAlpha(alpha)
+            self.sl_color = c
+            self.sl_brush = QBrush(c)
+        if "line_width" in style:
+            w = int(style["line_width"])
+            self.entry_pen.setWidth(w)
+        if "show_labels" in style:
+            self.show_labels = bool(style["show_labels"])
+        self.update()
 
     def _on_region_changed(self):
         eh_pos = self.entry_handle.pos()
@@ -121,7 +192,7 @@ class PositionDrawer(pg.ROI):
         p.drawText(sl_pt + QPointF(-40, -6 if self.is_long else 16), f"SL: {sl_price_world:,.2f}")
         p.restore()
 
-class FixedVolumeProfile(pg.ROI):
+class FixedVolumeProfile(BaseDrawingROI):
     """Draws a fixed range volume profile with 70% Value Area, POC, VAH, and VAL on particular candles."""
     def __init__(self, pos, size, get_bars_cb, tick_size, **kwargs):
         super().__init__(pos, size, **kwargs)
@@ -132,15 +203,50 @@ class FixedVolumeProfile(pg.ROI):
         
         self.outline_pen = pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine)
         self.bg_brush = QBrush(QColor(24, 26, 32, 120))
+        self._va_color_hex = "#2962FF"
+        self._poc_color_hex = "#FF1744"
+        self._out_color_hex = "#707070"
         self.va_bar_brush = QBrush(QColor(41, 98, 255, 160))     # Value Area 70% volume - Vibrant Blue
         self.non_va_bar_brush = QBrush(QColor(120, 120, 120, 70)) # Outside Value Area volume - Muted Gray
         self.poc_brush = QBrush(QColor(255, 23, 68, 220))        # POC Bar - Vibrant Red
         self.poc_pen = pg.mkPen('#FF1744', width=2)
         self.va_pen = pg.mkPen('#FFC107', width=1, style=Qt.PenStyle.DashLine) # VAH / VAL lines - Gold
+        self.show_labels = True
         
         self._vp_cache_key = None
         self._vp_cached_vol = {}
         self._vp_cached_va = (None, None, None, set()) # (poc_price, vah_price, val_price, va_prices)
+
+    def get_style(self) -> dict:
+        return {
+            "va_color": getattr(self, "_va_color_hex", "#2962FF"),
+            "poc_color": getattr(self, "_poc_color_hex", "#FF1744"),
+            "out_color": getattr(self, "_out_color_hex", "#707070"),
+            "line_width": self.poc_pen.width(),
+            "show_labels": getattr(self, "show_labels", True),
+        }
+
+    def apply_style(self, style: dict) -> None:
+        if "va_color" in style:
+            self._va_color_hex = style["va_color"]
+            c = QColor(style["va_color"])
+            c.setAlpha(160)
+            self.va_bar_brush = QBrush(c)
+        if "poc_color" in style:
+            self._poc_color_hex = style["poc_color"]
+            c = QColor(style["poc_color"])
+            c.setAlpha(220)
+            self.poc_brush = QBrush(c)
+            width = int(style.get("line_width", 2))
+            self.poc_pen = pg.mkPen(c, width=width)
+        if "out_color" in style:
+            self._out_color_hex = style["out_color"]
+            c = QColor(style["out_color"])
+            c.setAlpha(70)
+            self.non_va_bar_brush = QBrush(c)
+        if "show_labels" in style:
+            self.show_labels = bool(style["show_labels"])
+        self.update()
 
     def paint(self, p, opt, widget):
         rect = self.boundingRect()
@@ -266,7 +372,7 @@ class FixedVolumeProfile(pg.ROI):
         p.restore()
 
 
-class RangeCPR(pg.ROI):
+class RangeCPR(BaseDrawingROI):
     """Central Pivot Range (P, TC, BC, R1, S1) drawing tool for particular selected candles."""
     def __init__(self, pos, size, get_bars_cb, tick_size, **kwargs):
         super().__init__(pos, size, **kwargs)
@@ -275,12 +381,46 @@ class RangeCPR(pg.ROI):
         self.addScaleHandle([0, 0.5], [1, 0.5])
         self.addScaleHandle([1, 0.5], [0, 0.5])
         
+        self._p_color_hex = "#FF4081"
+        self._tc_bc_color_hex = "#00BCD4"
+        self._r_color_hex = "#00E676"
+        self._s_color_hex = "#FF1744"
         self.p_pen = pg.mkPen('#FF4081', width=2)                       # Main Pivot - Pink
         self.tc_pen = pg.mkPen('#00BCD4', width=1, style=Qt.PenStyle.DashLine) # Top Central - Cyan
         self.bc_pen = pg.mkPen('#00BCD4', width=1, style=Qt.PenStyle.DashLine) # Bottom Central - Cyan
         self.r1_pen = pg.mkPen('#00E676', width=1, style=Qt.PenStyle.DotLine)  # Resistance 1 - Green
         self.s1_pen = pg.mkPen('#FF1744', width=1, style=Qt.PenStyle.DotLine)  # Support 1 - Red
         self.outline_pen = pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine)
+        self.show_labels = True
+
+    def get_style(self) -> dict:
+        return {
+            "p_color": getattr(self, "_p_color_hex", "#FF4081"),
+            "tc_bc_color": getattr(self, "_tc_bc_color_hex", "#00BCD4"),
+            "r_color": getattr(self, "_r_color_hex", "#00E676"),
+            "s_color": getattr(self, "_s_color_hex", "#FF1744"),
+            "line_width": self.p_pen.width(),
+            "show_labels": getattr(self, "show_labels", True),
+        }
+
+    def apply_style(self, style: dict) -> None:
+        w = int(style.get("line_width", 1))
+        if "p_color" in style:
+            self._p_color_hex = style["p_color"]
+            self.p_pen = pg.mkPen(style["p_color"], width=max(2, w))
+        if "tc_bc_color" in style:
+            self._tc_bc_color_hex = style["tc_bc_color"]
+            self.tc_pen = pg.mkPen(style["tc_bc_color"], width=w, style=Qt.PenStyle.DashLine)
+            self.bc_pen = pg.mkPen(style["tc_bc_color"], width=w, style=Qt.PenStyle.DashLine)
+        if "r_color" in style:
+            self._r_color_hex = style["r_color"]
+            self.r1_pen = pg.mkPen(style["r_color"], width=w, style=Qt.PenStyle.DotLine)
+        if "s_color" in style:
+            self._s_color_hex = style["s_color"]
+            self.s1_pen = pg.mkPen(style["s_color"], width=w, style=Qt.PenStyle.DotLine)
+        if "show_labels" in style:
+            self.show_labels = bool(style["show_labels"])
+        self.update()
         
     def paint(self, p, opt, widget):
         rect = self.boundingRect()

@@ -13,7 +13,7 @@ This document is a comprehensive TODO list and technical specification for imple
 - [x] **5. Full-Screen Mode** (F11 / Immersive chart maximize)
 - [x] **6. Data Window** (Hover inspector for OHLC, Delta, POC, Imbalances)
 - [x] **7. Long & Short Position Calculators** (Risk/Reward drawing tool)
-- [ ] **8. Drawing Templates** (Save & apply custom styles/colors to drawings)
+- [x] **8. Drawing Templates** (Save & apply custom styles/colors to drawings)
 - [ ] **9. Second & Tick-Based Intervals** (High-frequency sub-minute & trade-count bars)
 - [ ] **10. Custom Spread Charts (Math Formulas)** (Synthetic ratio & difference charts e.g. `AAPL/SPY`)
 - [ ] **11. Time Price Opportunity (TPO / Market Profile)** (Letter/period bracket charts)

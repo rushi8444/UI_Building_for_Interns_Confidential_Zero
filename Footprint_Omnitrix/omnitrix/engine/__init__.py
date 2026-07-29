@@ -13,6 +13,7 @@ from .pipe_feed import PipeFeed
 from .recorder import Recorder, ReplayFeed, read_events
 
 from .timeframe import parse_timeframe, format_timeframe
+from .drawing_templates import TemplateManager, TEMPLATES_PATH
 
 __all__ = [
     "Trade",
@@ -23,6 +24,8 @@ __all__ = [
     "BarSeries",
     "parse_timeframe",
     "format_timeframe",
+    "TemplateManager",
+    "TEMPLATES_PATH",
     "BookmapBuffer",
     "SRTracker", "Level",
     "Column",

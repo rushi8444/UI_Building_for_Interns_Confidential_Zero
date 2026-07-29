@@ -13,11 +13,11 @@ from PyQt6.QtGui import QColor, QCursor
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QLabel, QComboBox, QCheckBox, QPushButton, QWidget,
     QSizePolicy, QDockWidget, QHBoxLayout, QVBoxLayout, QFrame, QButtonGroup, QMenu,
-    QSplitter, QListView,
+    QSplitter, QListView, QDialog,
 )
 
 from ..engine import (
-    Instruments, BarSeries, BookmapBuffer, SessionProfile, Feed, parse_timeframe
+    Instruments, BarSeries, BookmapBuffer, SessionProfile, Feed, parse_timeframe, TemplateManager
 )
 from ..engine.model import Trade, BookSnapshot
 from ..render import (
@@ -28,6 +28,7 @@ from .settings_dialog import SettingsDialog
 from .bookmap_window import BookmapWindow
 from .profile_window import ProfileWindow
 from .analytics_window import AnalyticsWindow
+from .drawing_props_dialog import DrawingPropsDialog
 from .monitor_window import MarketMonitorWindow
 from .dom_ladder import DomLadderWindow
 from . import workspace
@@ -166,6 +167,7 @@ class OmnitrixWindow(QMainWindow):
         self._dirty = False
         self._centered_once = False
         self._known_symbols: set[str] = set()
+        self.template_mgr = TemplateManager()
 
         # thread-safe hand-off: feed thread appends, GUI timer drains.
         # ONE queue keeps trades and books in their true time order, so a book
@@ -924,9 +926,69 @@ class OmnitrixWindow(QMainWindow):
                 )
             
             if item:
+                tool_type_name = "FibRetracement" if self.active_drawing_tool == "Fib" else (
+                    "PositionDrawer" if self.active_drawing_tool in ("Long", "Short") else (
+                        "FixedVolumeProfile" if self.active_drawing_tool == "VP" else "RangeCPR"
+                    )
+                )
+                self._setup_drawing_item_context_menu(cell, item, tool_type_name)
                 cell.price_plot.addItem(item)
                 self.drawing_items.append((cell.price_plot, item))
                 self._set_drawing_tool(None) # Auto-revert to cursor
+
+    def _setup_drawing_item_context_menu(self, cell, item, tool_type: str) -> None:
+        def on_item_clicked(roi, ev):
+            if ev.button() == Qt.MouseButton.RightButton:
+                menu = QMenu(self)
+                menu.setStyleSheet(
+                    "QMenu { background-color: #1A1D24; color: #E8E8E8; border: 1px solid #3A3A3A; border-radius: 6px; padding: 4px 0px; max-height: 600px; } "
+                    "QMenu::item { padding: 6px 24px 6px 12px; font-size: 12px; } "
+                    "QMenu::item:selected { background-color: #2A2A2A; color: #FFFFFF; }"
+                )
+                
+                act_props = menu.addAction("Properties & Styling...")
+                
+                tmpl_menu = menu.addMenu("Apply Template")
+                tmpls = self.template_mgr.get_templates_for(tool_type)
+                if tmpls:
+                    for t_name, style_dict in tmpls.items():
+                        act_t = tmpl_menu.addAction(t_name)
+                        act_t.triggered.connect(lambda checked=False, s=style_dict: (item.apply_style(s), cell.price_plot.update()))
+                else:
+                    act_none = tmpl_menu.addAction("(No Saved Templates)")
+                    act_none.setEnabled(False)
+
+                act_save = menu.addAction("Save Current Style As Template...")
+                menu.addSeparator()
+                act_del = menu.addAction("Remove Drawing")
+                
+                pt = ev.screenPos()
+                if hasattr(pt, 'toPoint'):
+                    pt = pt.toPoint()
+                elif hasattr(pt, 'x'):
+                    from PyQt6.QtCore import QPoint
+                    pt = QPoint(int(pt.x()), int(pt.y()))
+
+                action = menu.exec(pt)
+                if action == act_props:
+                    dlg = DrawingPropsDialog(tool_type, item.get_style(), self.template_mgr, self)
+                    if dlg.exec() == QDialog.DialogCode.Accepted:
+                        item.apply_style(dlg.style)
+                        cell.price_plot.update()
+                elif action == act_save:
+                    dlg = DrawingPropsDialog(tool_type, item.get_style(), self.template_mgr, self)
+                    dlg.exec()
+                    cell.price_plot.update()
+                elif action == act_del:
+                    cell.price_plot.removeItem(item)
+                    if (cell.price_plot, item) in self.drawing_items:
+                        self.drawing_items.remove((cell.price_plot, item))
+                    cell.price_plot.update()
+
+        if hasattr(item, 'sigRightClicked'):
+            item.sigRightClicked.connect(on_item_clicked)
+        if hasattr(item, 'sigClicked'):
+            item.sigClicked.connect(on_item_clicked)
 
     def _get_bars_for_vp(self, x_min, x_max, symbol=None):
         sym = symbol or self.active_symbol
