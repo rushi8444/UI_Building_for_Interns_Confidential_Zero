@@ -116,3 +116,76 @@ def detect_all(buffer, agg: int = 1) -> list[dict]:
           + detect_wall_breaks(cols))
     ev.sort(key=lambda d: -d["bucket"])
     return ev
+
+
+def detect_cvd_divergence(bars: list, cvd_series: list[float], window: int = 2) -> list[dict]:
+    """Detect Bullish and Bearish CVD Divergences across price swings vs CVD swings.
+
+    Bearish Divergence: Price makes a Higher High while CVD makes a Lower High.
+    Bullish Divergence: Price makes a Lower Low while CVD makes a Higher Low.
+    """
+    n = len(bars)
+    if n < (window * 2 + 2) or len(cvd_series) < n:
+        return []
+
+    swing_highs: list[int] = []
+    swing_lows: list[int] = []
+
+    for i in range(window, n - window):
+        p_high = bars[i].high
+        p_low = bars[i].low
+
+        is_sh = True
+        is_sl = True
+        for k in range(1, window + 1):
+            if bars[i - k].high > p_high or bars[i + k].high > p_high:
+                is_sh = False
+            if bars[i - k].low < p_low or bars[i + k].low < p_low:
+                is_sl = False
+
+        if is_sh:
+            swing_highs.append(i)
+        if is_sl:
+            swing_lows.append(i)
+
+    divergences = []
+
+    # Check consecutive swing highs for Bearish Divergence
+    for j in range(1, len(swing_highs)):
+        i1 = swing_highs[j - 1]
+        i2 = swing_highs[j]
+        p1, p2 = bars[i1].high, bars[i2].high
+        c1, c2 = cvd_series[i1], cvd_series[i2]
+
+        if p2 >= p1 and c2 < c1:
+            divergences.append({
+                "kind": "cvd_divergence",
+                "type": "bearish",
+                "idx1": i1,
+                "idx2": i2,
+                "price1": p1,
+                "price2": p2,
+                "cvd1": c1,
+                "cvd2": c2
+            })
+
+    # Check consecutive swing lows for Bullish Divergence
+    for j in range(1, len(swing_lows)):
+        i1 = swing_lows[j - 1]
+        i2 = swing_lows[j]
+        p1, p2 = bars[i1].low, bars[i2].low
+        c1, c2 = cvd_series[i1], cvd_series[i2]
+
+        if p2 <= p1 and c2 > c1:
+            divergences.append({
+                "kind": "cvd_divergence",
+                "type": "bullish",
+                "idx1": i1,
+                "idx2": i2,
+                "price1": p1,
+                "price2": p2,
+                "cvd1": c1,
+                "cvd2": c2
+            })
+
+    return divergences

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..engine import Instruments, BarSeries, Feed, parse_timeframe, format_timeframe
+from ..engine.signals import detect_cvd_divergence
 from ..render import (
     FootprintItem, HeatmapItem, DARK, LIGHT, TimeAxis,
     CPRItem, EMAItem
@@ -271,17 +272,17 @@ class ChartCellWidget(QWidget):
 
         self.act_imb = self.menu_ind.addAction("Imbalance")
         self.act_imb.setCheckable(True)
-        self.act_imb.setChecked(True)
+        self.act_imb.setChecked(False)
         self.act_imb.toggled.connect(self._on_toggle_imb)
 
         self.act_va = self.menu_ind.addAction("Value Area")
         self.act_va.setCheckable(True)
-        self.act_va.setChecked(True)
+        self.act_va.setChecked(False)
         self.act_va.toggled.connect(self._on_toggle_va)
 
         self.act_vwap = self.menu_ind.addAction("VWAP")
         self.act_vwap.setCheckable(True)
-        self.act_vwap.setChecked(True)
+        self.act_vwap.setChecked(False)
         self.act_vwap.toggled.connect(self._on_toggle_vwap)
 
         self.act_cpr = self.menu_ind.addAction("CPR")
@@ -293,6 +294,16 @@ class ChartCellWidget(QWidget):
         self.act_ema.setCheckable(True)
         self.act_ema.setChecked(False)
         self.act_ema.toggled.connect(self._on_toggle_ema)
+
+        self.act_cvd = self.menu_ind.addAction("CVD Sub-Chart")
+        self.act_cvd.setCheckable(True)
+        self.act_cvd.setChecked(True)
+        self.act_cvd.toggled.connect(self._on_toggle_cvd)
+
+        self.act_cvd_div = self.menu_ind.addAction("CVD Divergence")
+        self.act_cvd_div.setCheckable(True)
+        self.act_cvd_div.setChecked(False)
+        self.act_cvd_div.toggled.connect(self._on_toggle_cvd_div)
 
         hl.addStretch()
 
@@ -318,8 +329,9 @@ class ChartCellWidget(QWidget):
         self.glw = pg.GraphicsLayoutWidget()
         layout.addWidget(self.glw)
 
+        self.price_time_axis = TimeAxis(orientation="bottom")
         self.price_vb = CellViewBox(chart_cell=self)
-        self.price_plot = self.glw.addPlot(row=0, col=0, viewBox=self.price_vb)
+        self.price_plot = self.glw.addPlot(row=0, col=0, viewBox=self.price_vb, axisItems={"bottom": self.price_time_axis})
         self.price_plot.showAxis("right")
         self.price_plot.hideAxis("left")
         self.price_plot.hideAxis("bottom")
@@ -339,6 +351,9 @@ class ChartCellWidget(QWidget):
         self.price_plot.addItem(self.heatmap)
 
         self.fp = FootprintItem(self.instruments.tick(self.active_symbol), self.theme)
+        self.fp.show_imbalance = False
+        self.fp.show_va = False
+        self.show_cvd_div = False
         self.price_plot.addItem(self.fp)
 
         # Overlays
@@ -354,6 +369,7 @@ class ChartCellWidget(QWidget):
         self.price_plot.addItem(self.ema21_item)
 
         self.vwap_curve = pg.PlotDataItem(pen=pg.mkPen(self.theme.vwap, width=2))
+        self.vwap_curve.setVisible(False)
         self.price_plot.addItem(self.vwap_curve)
 
         self.vwap_bands = []
@@ -488,6 +504,24 @@ class ChartCellWidget(QWidget):
         self.ema21_item.setVisible(on)
         self.redraw()
 
+    def _on_toggle_cvd(self, on: bool):
+        self.show_cvd = on
+        if on:
+            self.cvd_plot.setVisible(True)
+            self.price_plot.hideAxis("bottom")
+            self.glw.ci.layout.setRowStretchFactor(0, 4)
+            self.glw.ci.layout.setRowStretchFactor(1, 1)
+        else:
+            self.cvd_plot.setVisible(False)
+            self.price_plot.showAxis("bottom")
+            self.glw.ci.layout.setRowStretchFactor(0, 1)
+            self.glw.ci.layout.setRowStretchFactor(1, 0)
+        self.redraw()
+
+    def _on_toggle_cvd_div(self, on: bool):
+        self.show_cvd_div = on
+        self.redraw()
+
     def _toggle_autofit(self, checked=None):
         if checked is None:
             self._auto_fit_enabled = not self._auto_fit_enabled
@@ -560,6 +594,8 @@ class ChartCellWidget(QWidget):
         if self.heatmap.isVisible():
             self.heatmap.set_bars(bars)
         self.time_axis.set_bars(bars)
+        if hasattr(self, "price_time_axis"):
+            self.price_time_axis.set_bars(bars)
 
         if self.cpr_item.isVisible(): self.cpr_item.set_bars(bars)
         if self.ema9_item.isVisible(): self.ema9_item.set_bars(bars)
@@ -576,10 +612,57 @@ class ChartCellWidget(QWidget):
                 left_edge = max(-1, right_edge - view_w)
                 self.price_plot.setXRange(left_edge, right_edge, padding=0)
 
+    def _clear_cvd_divergences(self):
+        for item in getattr(self, "cvd_div_items", []):
+            try:
+                self.price_plot.removeItem(item)
+            except Exception:
+                pass
+            try:
+                self.cvd_plot.removeItem(item)
+            except Exception:
+                pass
+        self.cvd_div_items = []
+
+    def _update_cvd_divergences(self, bars: list, cvd_series: list[float]):
+        self._clear_cvd_divergences()
+        if not getattr(self, "show_cvd_div", True) or not bars or not cvd_series:
+            return
+
+        divergences = detect_cvd_divergence(bars, cvd_series, window=2)
+        for d in divergences:
+            is_bear = (d["type"] == "bearish")
+            color = "#FF5252" if is_bear else "#00E676"
+            label = "BEAR DIV" if is_bear else "BULL DIV"
+            pen = pg.mkPen(color, width=1.5, style=Qt.PenStyle.DashLine)
+
+            # Price plot line
+            p_line = pg.PlotDataItem([d["idx1"], d["idx2"]], [d["price1"], d["price2"]], pen=pen)
+            self.price_plot.addItem(p_line)
+            self.cvd_div_items.append(p_line)
+
+            # Price plot text badge
+            p_text = pg.TextItem(text=label, color=color, anchor=(0.5, 1.0 if is_bear else 0.0))
+            p_text.setPos(d["idx2"], d["price2"])
+            self.price_plot.addItem(p_text)
+            self.cvd_div_items.append(p_text)
+
+            # CVD plot line
+            c_line = pg.PlotDataItem([d["idx1"], d["idx2"]], [d["cvd1"], d["cvd2"]], pen=pen)
+            self.cvd_plot.addItem(c_line)
+            self.cvd_div_items.append(c_line)
+
+            # CVD plot text badge
+            c_text = pg.TextItem(text=label, color=color, anchor=(0.5, 1.0 if is_bear else 0.0))
+            c_text.setPos(d["idx2"], d["cvd2"])
+            self.cvd_plot.addItem(c_text)
+            self.cvd_div_items.append(c_text)
+
     def _update_overlays(self, series: BarSeries, bars: list):
         if not bars:
             self.vwap_curve.setData([], [])
             self.cvd_curve.setData([], [])
+            self._clear_cvd_divergences()
             return
         vx, vy, cx, cy = [], [], [], []
         vstd = []
@@ -608,6 +691,7 @@ class ChartCellWidget(QWidget):
             else:
                 curve.setData([], [])
         self.cvd_curve.setData(cx, cy)
+        self._update_cvd_divergences(bars, cy)
 
     def _apply_theme(self):
         t = self.theme

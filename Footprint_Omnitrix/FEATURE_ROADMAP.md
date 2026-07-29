@@ -18,7 +18,7 @@ This document is a comprehensive TODO list and technical specification for imple
 - [ ] **10. Custom Spread Charts (Math Formulas)** (Synthetic ratio & difference charts e.g. `AAPL/SPY`)
 - [ ] **11. Time Price Opportunity (TPO / Market Profile)** (Letter/period bracket charts)
 - [x] **12. Fixed Range Volume Profile (FRVP)** (TradingView-style custom range volume tool)
-- [ ] **13. Cumulative Volume Delta (CVD) Enhancements** (CVD divergence, bar-color CVD, and sub-chart sync)
+- [x] **13. Cumulative Volume Delta (CVD) Enhancements** (CVD divergence, bar-color CVD, and sub-chart sync)
 
 ---
 

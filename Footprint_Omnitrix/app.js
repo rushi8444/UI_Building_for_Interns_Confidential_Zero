@@ -1497,6 +1497,47 @@ function drawLowerPanes(ctx, chartWidth, totalHeight, candles) {
             ctx.fillText("CVD", chartWidth + 6, paneTop + 10);
             ctx.fillText(formatVol(maxCvd), chartWidth + 6, paneTop + 25);
             ctx.fillText(formatVol(minCvd), chartWidth + 6, paneTop + PANE_HEIGHT - 10);
+
+            // CVD Divergence Detection
+            const win = 2;
+            const swingHighs = [];
+            const swingLows = [];
+            for (let i = win; i < candles.length - win; i++) {
+                let isSH = true, isSL = true;
+                for (let k = 1; k <= win; k++) {
+                    if (candles[i-k].high > candles[i].high || candles[i+k].high > candles[i].high) isSH = false;
+                    if (candles[i-k].low < candles[i].low || candles[i+k].low < candles[i].low) isSL = false;
+                }
+                if (isSH) swingHighs.push(i);
+                if (isSL) swingLows.push(i);
+            }
+            ctx.save();
+            ctx.font = "10px sans-serif";
+            for (let j = 1; j < swingHighs.length; j++) {
+                const i1 = swingHighs[j-1], i2 = swingHighs[j];
+                if (candles[i2].high >= candles[i1].high && cvdData[i2] < cvdData[i1]) {
+                    const x1 = offsetX + (i1 * scaleX) + scaleX/2;
+                    const x2 = offsetX + (i2 * scaleX) + scaleX/2;
+                    const y1 = paneTop + 10 + ((maxCvd - cvdData[i1]) / cvdRange) * (PANE_HEIGHT - 20);
+                    const y2 = paneTop + 10 + ((maxCvd - cvdData[i2]) / cvdRange) * (PANE_HEIGHT - 20);
+                    ctx.strokeStyle = THEME.red; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+                    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+                    ctx.fillStyle = THEME.red; ctx.fillText("BEAR DIV", x2 - 20, y2 - 4);
+                }
+            }
+            for (let j = 1; j < swingLows.length; j++) {
+                const i1 = swingLows[j-1], i2 = swingLows[j];
+                if (candles[i2].low <= candles[i1].low && cvdData[i2] > cvdData[i1]) {
+                    const x1 = offsetX + (i1 * scaleX) + scaleX/2;
+                    const x2 = offsetX + (i2 * scaleX) + scaleX/2;
+                    const y1 = paneTop + 10 + ((maxCvd - cvdData[i1]) / cvdRange) * (PANE_HEIGHT - 20);
+                    const y2 = paneTop + 10 + ((maxCvd - cvdData[i2]) / cvdRange) * (PANE_HEIGHT - 20);
+                    ctx.strokeStyle = THEME.green; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+                    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+                    ctx.fillStyle = THEME.green; ctx.fillText("BULL DIV", x2 - 20, y2 + 12);
+                }
+            }
+            ctx.restore();
         } else if (paneType === 'rsi') {
             const rsiInd = activeIndicators.find(ind => ind.type === 'rsi');
             if (!rsiInd) return;

@@ -199,6 +199,9 @@ class SettingsDialog(QDialog):
         self.chk_candles = QCheckBox(); self.chk_candles.setChecked(fp.show_candles)
         form.addRow("Show candles", self.chk_candles)
 
+        self.chk_cvd_div = QCheckBox(); self.chk_cvd_div.setChecked(getattr(win, "show_cvd_div", False))
+        form.addRow("Show CVD Divergence", self.chk_cvd_div)
+
         # Colour pickers
         self.c_bull = _ColorButton(QColor(t.bull))
         self.c_bear = _ColorButton(QColor(t.bear))
@@ -231,6 +234,7 @@ class SettingsDialog(QDialog):
             "hm_alpha": self.hm_alpha.value(),
             "hm_gamma": self.hm_gamma.value(),
             "show_candles": self.chk_candles.isChecked(),
+            "show_cvd_div": self.chk_cvd_div.isChecked(),
             "bull": self.c_bull.color().name(),
             "bear": self.c_bear.color().name(),
             "buy_imb": self.c_buy.color(),

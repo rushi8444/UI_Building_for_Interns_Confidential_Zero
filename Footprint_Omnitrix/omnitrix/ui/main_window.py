@@ -834,6 +834,11 @@ class OmnitrixWindow(QMainWindow):
         )
         self.heatmap.alpha = v["hm_alpha"]
         self.heatmap.gamma = v["hm_gamma"]
+        self.show_cvd_div = v.get("show_cvd_div", True)
+        if hasattr(self, "chart_grid"):
+            for cell in self.chart_grid.cells:
+                cell.show_cvd_div = self.show_cvd_div
+                cell.redraw()
         # colour overrides -> new immutable theme
         self.theme = replace(self.theme, bull=v["bull"], bear=v["bear"],
                              buy_imb=v["buy_imb"], sell_imb=v["sell_imb"])
