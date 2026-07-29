@@ -225,33 +225,70 @@ function connectWS() {
                 updateSymbolDropdown();
             }
             const symbolData = footprintData[msg.symbol];
-            let found = false;
-            for (let i = symbolData.candles.length - 1; i >= 0; i--) {
-                if (symbolData.candles[i].timestamp === msg.candle.timestamp) {
-                    symbolData.candles[i] = msg.candle;
-                    found = true; break;
-                }
-            }
-            if (!found) {
-                symbolData.candles.push(msg.candle);
-                if (symbolData.candles.length > 60) symbolData.candles.shift();
-                
-                if (msg.symbol === currentSymbol) {
-                    const chartWidth = canvas.width - AXIS_RIGHT;
-                    const maxX = (symbolData.candles.length * scaleX);
-                    if (offsetX < chartWidth - maxX + scaleX * 2) {
-                        offsetX = chartWidth - maxX - 100;
+            const candles = symbolData.candles;
+
+            if (msg.tick) {
+                // Incoming live tick: only update active candle (candles[candles.length - 1])
+                updateTickCandle(symbolData, msg.tick, 100);
+            } else if (msg.candle) {
+                // Candle update: check if updating current active candle or pushing a new candle
+                if (candles.length > 0 && candles[candles.length - 1].timestamp === msg.candle.timestamp) {
+                    candles[candles.length - 1] = msg.candle;
+                } else if (candles.length === 0 || msg.candle.timestamp > candles[candles.length - 1].timestamp) {
+                    candles.push(msg.candle);
+                    if (candles.length > 60) candles.shift();
+                    
+                    if (msg.symbol === currentSymbol) {
+                        const chartWidth = canvas.width - AXIS_RIGHT;
+                        const maxX = (candles.length * scaleX);
+                        if (offsetX < chartWidth - maxX + scaleX * 2) {
+                            offsetX = chartWidth - maxX - 100;
+                        }
                     }
                 }
             }
+
             if (msg.symbol === currentSymbol) {
                 draw();
-                updatePanels(msg.candle, msg.tape);
+                updatePanels(candles[candles.length - 1] || msg.candle, msg.tape);
             }
         }
     };
 }
 connectWS();
+
+function updateTickCandle(symbolData, tick, maxTicks = 100) {
+    if (!symbolData.candles) {
+        symbolData.candles = [];
+    }
+    const candles = symbolData.candles;
+    let activeCandle = candles.length > 0 ? candles[candles.length - 1] : null;
+
+    if (!activeCandle || (activeCandle.tickCount || 0) >= maxTicks) {
+        if (activeCandle) {
+            activeCandle.isCompleted = true;
+        }
+        activeCandle = {
+            timestamp: tick.timestamp || Math.floor(Date.now() / 1000),
+            open: tick.price,
+            high: tick.price,
+            low: tick.price,
+            close: tick.price,
+            volume: tick.size || 1,
+            tickCount: 1,
+            isCompleted: false,
+            footprint: {}
+        };
+        candles.push(activeCandle);
+    } else {
+        // Only update active candle (candles[candles.length - 1])
+        activeCandle.high = Math.max(activeCandle.high, tick.price);
+        activeCandle.low = Math.min(activeCandle.low, tick.price);
+        activeCandle.close = tick.price;
+        activeCandle.volume += (tick.size || 1);
+        activeCandle.tickCount = (activeCandle.tickCount || 0) + 1;
+    }
+}
 
 function updatePanels(candle, tape) {
     if (!candle) return;

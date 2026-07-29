@@ -20,8 +20,10 @@ from ..render import (
 from .custom_tf_dialog import CustomTimeframeDialog
 
 TF_CHOICES = {
-    "10s": 10, "30s": 30, "1m": 60, "2m": 120, "3m": 180, "5m": 300,
+    "5s": 5, "10s": 10, "15s": 15, "30s": 30,
+    "1m": 60, "2m": 120, "3m": 180, "5m": 300,
     "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400,
+    "100T": "100T", "250T": "250T", "500T": "500T", "1000T": "1000T",
     "Custom...": -1,
 }
 
@@ -439,12 +441,12 @@ class ChartCellWidget(QWidget):
             dlg = CustomTimeframeDialog(format_timeframe(self.tf_s), self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 tf_text = dlg.selected_tf_text
-                secs = dlg.selected_tf_seconds
-                TF_CHOICES[tf_text] = secs
+                tf_val = dlg.selected_tf_val
+                TF_CHOICES[tf_text] = tf_val
                 if tf_text not in self.tf_combo._items:
                     self.tf_combo.addItem(tf_text)
                 self.tf_combo.setCurrentText(tf_text)
-                self.tf_s = secs
+                self.tf_s = tf_val
                 self._dirty = True
                 self.redraw()
             else:

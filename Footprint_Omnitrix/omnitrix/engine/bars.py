@@ -153,7 +153,7 @@ class Bar:
 
 class BarSeries:
     """All bars for one symbol, built at a base timeframe with memoized
-    aggregation to higher timeframes."""
+    aggregation to higher timeframes and tick-count intervals."""
 
     def __init__(self, symbol: str, instruments: Instruments,
                  base_tf_s: int = 10, max_bars: int = 12000):
@@ -162,29 +162,47 @@ class BarSeries:
         self.base_tf_s = base_tf_s
         self.max_bars = max_bars
         self.bars: list[Bar] = []
+        self.trades: list[Trade] = []
         self._bar_by_ts: dict[int, Bar] = {}    # start_ts -> bar, for O(1) book routing
         self._version = 0                       # bumps whenever base bars change
-        self._agg_cache: dict[int, tuple[int, list[Bar]]] = {}
+        self._agg_cache: dict[int | str, tuple[int, list[Bar]]] = {}
+        self._tick_series: dict[int, list[Bar]] = {}
+        self._tick_counts: dict[int, int] = {}
 
     def add_trade(self, tr: Trade) -> None:
+        self.trades.append(tr)
+        if len(self.trades) > 100000:
+            self.trades.pop(0)
+
         bucket = (tr.ts_ms // 1000 // self.base_tf_s) * self.base_tf_s
         ti = self.instruments.to_index(self.symbol, tr.price)
+        ts_s = tr.ts_ms // 1000
+
+        # Stateful, incremental tick bar aggregation (past bars remain immutable)
+        for tc, t_bars in self._tick_series.items():
+            cnt = self._tick_counts.get(tc, 0)
+            if not t_bars or cnt >= tc:
+                if t_bars:
+                    t_bars[-1].seal()
+                new_bar = Bar(ts_s, 0, tr.price)
+                t_bars.append(new_bar)
+                if len(t_bars) > self.max_bars:
+                    t_bars.pop(0)
+                cnt = 0
+            t_bars[-1].add(tr.price, ti, tr.size, tr.aggressor)
+            self._tick_counts[tc] = cnt + 1
 
         if self.bars and bucket < self.bars[-1].start_ts:
-            # A tick that arrives out of order must never append a bar behind
-            # the last one - `bars` is drawn by index, so a non-monotonic
-            # start_ts sends the x-axis backwards. Fold it into its own bar if
-            # that is still in the window, else drop it as too late to place.
             late = self._bar_by_ts.get(bucket)
             if late is not None:
                 late.add(tr.price, ti, tr.size, tr.aggressor)
-                late.seal()     # re-seal: add() dirtied an already-finished bar
+                late.seal()
                 self._version += 1
             return
 
         if not self.bars or self.bars[-1].start_ts != bucket:
             if self.bars:
-                self.bars[-1].seal()            # finalize the previous bar
+                self.bars[-1].seal()
             bar = Bar(bucket, self.base_tf_s, tr.price)
             self.bars.append(bar)
             self._bar_by_ts[bucket] = bar
@@ -212,10 +230,25 @@ class BarSeries:
         bar.book = book
         self._version += 1
 
-    # ---- higher-timeframe view (memoized) --------------------------------
-    def view(self, tf_s: int) -> list[Bar]:
-        if tf_s <= self.base_tf_s:
+    # ---- higher-timeframe & tick-count view (memoized) -------------------
+    def view(self, tf: int | str) -> list[Bar]:
+        if isinstance(tf, str) and tf.upper().endswith("T"):
+            try:
+                t_count = int(tf[:-1])
+            except ValueError:
+                t_count = 500
+            return self.view_ticks(t_count)
+
+        try:
+            tf_s = int(tf)
+        except (ValueError, TypeError):
+            tf_s = 60
+
+        if tf_s == self.base_tf_s:
             return self.bars
+
+        if tf_s < self.base_tf_s:
+            return self._aggregate_from_trades(tf_s)
 
         cached = self._agg_cache.get(tf_s)
         if cached and cached[0] == self._version:
@@ -224,6 +257,43 @@ class BarSeries:
         agg = self._aggregate(tf_s)
         self._agg_cache[tf_s] = (self._version, agg)
         return agg
+
+    def view_ticks(self, tick_count: int) -> list[Bar]:
+        if tick_count not in self._tick_series:
+            self._init_tick_series(tick_count)
+        return self._tick_series[tick_count]
+
+    def _init_tick_series(self, tick_count: int) -> None:
+        bars: list[Bar] = []
+        if tick_count <= 0:
+            self._tick_series[tick_count] = bars
+            self._tick_counts[tick_count] = 0
+            return
+
+        cur: Bar | None = None
+        t_in_bar = 0
+        to_index = self.instruments.to_index
+        sym = self.symbol
+
+        for tr in self.trades:
+            ts_s = tr.ts_ms // 1000
+            ti = to_index(sym, tr.price)
+
+            if cur is None or t_in_bar >= tick_count:
+                if cur is not None:
+                    cur.seal()
+                    bars.append(cur)
+                cur = Bar(ts_s, 0, tr.price)
+                t_in_bar = 0
+
+            cur.add(tr.price, ti, tr.size, tr.aggressor)
+            t_in_bar += 1
+
+        if cur is not None:
+            bars.append(cur)
+
+        self._tick_series[tick_count] = bars
+        self._tick_counts[tick_count] = t_in_bar
 
     def _aggregate(self, tf_s: int) -> list[Bar]:
         out: list[Bar] = []
@@ -248,12 +318,61 @@ class BarSeries:
             cur.volume += base.volume
             cur.delta += base.delta
             if base.book:
-                cur.book = base.book        # most-recent book in the group wins
+                cur.book = base.book
         if cur is not None:
-            out.append(cur)     # live aggregated bar left unsealed
+            out.append(cur)
         return out
 
-    def cvd(self, tf_s: int) -> list[float]:
+    def _aggregate_from_trades(self, tf_s: int) -> list[Bar]:
+        out: list[Bar] = []
+        cur: Bar | None = None
+        to_index = self.instruments.to_index
+        sym = self.symbol
+
+        for tr in self.trades:
+            ts_s = tr.ts_ms // 1000
+            bucket = (ts_s // tf_s) * tf_s
+            ti = to_index(sym, tr.price)
+            if cur is None or cur.start_ts != bucket:
+                if cur is not None:
+                    cur.seal()
+                    out.append(cur)
+                cur = Bar(bucket, tf_s, tr.price)
+            cur.add(tr.price, ti, tr.size, tr.aggressor)
+
+        if cur is not None:
+            out.append(cur)
+        return out
+
+    def _aggregate_ticks(self, tick_count: int) -> list[Bar]:
+        out: list[Bar] = []
+        if not self.trades or tick_count <= 0:
+            return out
+
+        cur: Bar | None = None
+        t_in_bar = 0
+        to_index = self.instruments.to_index
+        sym = self.symbol
+
+        for tr in self.trades:
+            ts_s = tr.ts_ms // 1000
+            ti = to_index(sym, tr.price)
+
+            if cur is None or t_in_bar >= tick_count:
+                if cur is not None:
+                    cur.seal()
+                    out.append(cur)
+                cur = Bar(ts_s, 0, tr.price)
+                t_in_bar = 0
+
+            cur.add(tr.price, ti, tr.size, tr.aggressor)
+            t_in_bar += 1
+
+        if cur is not None:
+            out.append(cur)
+        return out
+
+    def cvd(self, tf_s: int | str) -> list[float]:
         """Cumulative volume delta series aligned to the view bars."""
         acc = 0
         series = []

@@ -14,7 +14,7 @@ This document is a comprehensive TODO list and technical specification for imple
 - [x] **6. Data Window** (Hover inspector for OHLC, Delta, POC, Imbalances)
 - [x] **7. Long & Short Position Calculators** (Risk/Reward drawing tool)
 - [x] **8. Drawing Templates** (Save & apply custom styles/colors to drawings)
-- [ ] **9. Second & Tick-Based Intervals** (High-frequency sub-minute & trade-count bars)
+- [x] **9. Second & Tick-Based Intervals** (High-frequency sub-minute & trade-count bars)
 - [ ] **10. Custom Spread Charts (Math Formulas)** (Synthetic ratio & difference charts e.g. `AAPL/SPY`)
 - [ ] **11. Time Price Opportunity (TPO / Market Profile)** (Letter/period bracket charts)
 - [x] **12. Fixed Range Volume Profile (FRVP)** (TradingView-style custom range volume tool)
