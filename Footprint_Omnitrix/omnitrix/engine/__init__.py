@@ -12,6 +12,8 @@ from .feed import Feed, SyntheticFeed
 from .pipe_feed import PipeFeed
 from .recorder import Recorder, ReplayFeed, read_events
 
+from .timeframe import parse_timeframe, format_timeframe
+
 __all__ = [
     "Trade",
     "BookSnapshot",
@@ -19,6 +21,8 @@ __all__ = [
     "Instruments",
     "Bar",
     "BarSeries",
+    "parse_timeframe",
+    "format_timeframe",
     "BookmapBuffer",
     "SRTracker", "Level",
     "Column",

@@ -12,15 +12,17 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton, QLabel, QFrame, QSizePolicy, QMenu, QListView
 )
 
-from ..engine import Instruments, BarSeries, Feed
+from ..engine import Instruments, BarSeries, Feed, parse_timeframe, format_timeframe
 from ..render import (
     FootprintItem, HeatmapItem, DARK, LIGHT, TimeAxis,
     CPRItem, EMAItem
 )
+from .custom_tf_dialog import CustomTimeframeDialog
 
 TF_CHOICES = {
     "10s": 10, "30s": 30, "1m": 60, "2m": 120, "3m": 180, "5m": 300,
-    "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400,
+    "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400,
+    "Custom...": -1,
 }
 
 MODES = {
@@ -415,7 +417,11 @@ class ChartCellWidget(QWidget):
             self.redraw()
 
     def set_timeframe(self, tf_text: str):
-        self.tf_s = TF_CHOICES.get(tf_text, 60)
+        if tf_text not in TF_CHOICES:
+            TF_CHOICES[tf_text] = parse_timeframe(tf_text)
+            if tf_text not in self.tf_combo._items:
+                self.tf_combo.addItem(tf_text)
+        self.tf_s = TF_CHOICES.get(tf_text) or parse_timeframe(tf_text)
         self.tf_combo.setCurrentText(tf_text)
         self._dirty = True
         self.redraw()
@@ -428,7 +434,24 @@ class ChartCellWidget(QWidget):
             self.redraw()
 
     def _on_tf(self, txt: str):
-        self.tf_s = TF_CHOICES.get(txt, 60)
+        if txt == "Custom...":
+            from PyQt6.QtWidgets import QDialog
+            dlg = CustomTimeframeDialog(format_timeframe(self.tf_s), self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                tf_text = dlg.selected_tf_text
+                secs = dlg.selected_tf_seconds
+                TF_CHOICES[tf_text] = secs
+                if tf_text not in self.tf_combo._items:
+                    self.tf_combo.addItem(tf_text)
+                self.tf_combo.setCurrentText(tf_text)
+                self.tf_s = secs
+                self._dirty = True
+                self.redraw()
+            else:
+                self.tf_combo.setCurrentText(format_timeframe(self.tf_s))
+            return
+
+        self.tf_s = TF_CHOICES.get(txt) or parse_timeframe(txt)
         self._dirty = True
         self.redraw()
 

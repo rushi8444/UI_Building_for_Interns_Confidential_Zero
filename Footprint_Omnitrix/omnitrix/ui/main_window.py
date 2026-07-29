@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..engine import (
-    Instruments, BarSeries, BookmapBuffer, SessionProfile, Feed,
+    Instruments, BarSeries, BookmapBuffer, SessionProfile, Feed, parse_timeframe
 )
 from ..engine.model import Trade, BookSnapshot
 from ..render import (
@@ -40,7 +40,7 @@ from .chart_cell import ChartCellWidget
 
 TF_CHOICES = {
     "10s": 10, "30s": 30, "1m": 60, "2m": 120, "3m": 180, "5m": 300,
-    "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400,
+    "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400,
 }
 
 # mode -> (footprint mode, draw footprint cells, heatmap visible)
@@ -760,7 +760,7 @@ class OmnitrixWindow(QMainWindow):
         return self.cells[0].mode_combo if self.cells else None
 
     def _on_tf(self, txt: str) -> None:
-        self.tf_s = TF_CHOICES.get(txt, 60)
+        self.tf_s = TF_CHOICES.get(txt) or parse_timeframe(txt)
         for c in self.cells:
             c.set_timeframe(txt)
         self._dirty = True
