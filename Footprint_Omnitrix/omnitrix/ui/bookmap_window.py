@@ -21,10 +21,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPainter, QColor, QFont, QBrush, QLinearGradient
 
-from ..engine import BookmapBuffer, SRTracker
+from ..engine import BookmapBuffer, SRTracker, MicrostructureSRTracker
 from ..render import (
     BookHeatmapItem, BBOItem, BubbleItem, PieItem, BarsItem, ProjectionItem,
-    DomLadderItem, VolumeBarsItem, SRLinesItem, DARK, Theme,
+    DomLadderItem, VolumeBarsItem, SRLinesItem, IcebergItem, DARK, Theme,
 )
 
 from ..render.bookmap import BOOKMAP_BG as BG
@@ -264,12 +264,15 @@ class BookmapWindow(QMainWindow):
         self.main.addItem(self.projection)
         self.proj_width = 7
 
-        # Absolute support / resistance: the levels that have actually held,
+        # Absolute support / resistance: quantitative contiguous price zones,
         # drawn full width so price can be watched approaching them.
-        self.sr = SRTracker()
+        self.sr = MicrostructureSRTracker(persistence_sec=2.5, top_n=3)
         self.sr_item = SRLinesItem(self.tick)
         self.sr_item.setVisible(True)    # visible by default
         self.main.addItem(self.sr_item)
+
+        self.iceberg_item = IcebergItem(self.tick)
+        self.main.addItem(self.iceberg_item)
 
         # ---- crosshair with live price / time / liquidity readout ----
         self.cx_v = pg.InfiniteLine(angle=90, movable=False,
@@ -424,6 +427,7 @@ class BookmapWindow(QMainWindow):
         else:
             self.bars.set_cols(cols)
         self.vol_item.set_cols(cols)
+        self.iceberg_item.set_cols(cols)
         latest = cols[-1]
         # The newest column may have been created by a trade and carry no book;
         # fall back to the newest one that does so the DOM/projection hold.
@@ -450,12 +454,18 @@ class BookmapWindow(QMainWindow):
 
         # Persistence-weighted S/R, shared by the projection bands and the
         # full-width lines so the two always name the same levels.
-        sup, res, walls = self.sr.update(cols, mid_ti)
-        self.projection.set_sr(sup, res)
+        top_sup, top_res, all_top = self.sr.update(cols, mid_ti, tick_size=self.tick)
+        self.projection.set_sr(top_sup[0] if top_sup else None, top_res[0] if top_res else None)
         if self.btn_sr.isChecked():
-            self.sr_item.set_levels(sup, res, cols[0].bucket,
-                                    latest.bucket + self.proj_width + 1,
-                                    walls=walls, mid_ti=mid_ti)
+            self.sr_item.set_levels(
+                support=top_sup[0] if top_sup else None,
+                resistance=top_res[0] if top_res else None,
+                x0=cols[0].bucket,
+                x1=latest.bucket + self.proj_width + 1,
+                walls=[],
+                mid_ti=mid_ti,
+                zones=all_top
+            )
 
         if book_col.book:
             # Exact, no margin: the ladder's bars are right-anchored at mx, so

@@ -30,6 +30,12 @@ QLineEdit, QSpinBox, QDoubleSpinBox {
     selection-background-color: #26A69A;
     selection-color: #000000;
 }
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+    width: 0;
+    height: 0;
+    border: none;
+}
 QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
     border-color: #388E3C;
 }
@@ -171,6 +177,12 @@ class SettingsDialog(QDialog):
                     selection-background-color: #00897B;
                     selection-color: #FFFFFF;
                 }
+                QSpinBox::up-button, QSpinBox::down-button,
+                QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                    width: 0;
+                    height: 0;
+                    border: none;
+                }
                 QPushButton#ApplyButton {
                     background-color: #00897B;
                     color: #FFFFFF;
@@ -202,41 +214,51 @@ class SettingsDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         root.addLayout(form)
 
+        _NO_BTN = QDoubleSpinBox.ButtonSymbols.NoButtons
+        _NO_BTN_INT = QSpinBox.ButtonSymbols.NoButtons
+
         self.tick = QDoubleSpinBox()
         self.tick.setDecimals(4); self.tick.setRange(0.0001, 100.0)
         self.tick.setSingleStep(0.01)
         self.tick.setValue(win.instruments.tick(win.active_symbol or "QQQ"))
+        self.tick.setButtonSymbols(_NO_BTN)
         form.addRow("Tick size", self.tick)
 
         self.imb = QDoubleSpinBox()
         self.imb.setRange(1.1, 20.0); self.imb.setSingleStep(0.5)
         self.imb.setValue(getattr(fp, "imbalance_factor", 3.0) if fp else 3.0)
+        self.imb.setButtonSymbols(_NO_BTN)
         form.addRow("Imbalance factor ×", self.imb)
 
         self.minvol = QSpinBox()
         self.minvol.setRange(0, 100000)
         self.minvol.setValue(getattr(fp, "min_imbalance_vol", 0) if fp else 0)
+        self.minvol.setButtonSymbols(_NO_BTN_INT)
         form.addRow("Min imbalance vol", self.minvol)
 
         self.stacked = QSpinBox()
         self.stacked.setRange(2, 20)
         self.stacked.setValue(getattr(fp, "stacked_min", 3) if fp else 3)
+        self.stacked.setButtonSymbols(_NO_BTN_INT)
         form.addRow("Stacked levels ≥", self.stacked)
 
         self.vapct = QSpinBox()
         self.vapct.setRange(30, 95)
         self.vapct.setValue(int(getattr(fp, "va_pct", 0.70) * 100) if fp else 70)
         self.vapct.setSuffix(" %")
+        self.vapct.setButtonSymbols(_NO_BTN_INT)
         form.addRow("Value area", self.vapct)
 
         self.hm_alpha = QSpinBox()
         self.hm_alpha.setRange(20, 255)
         self.hm_alpha.setValue(getattr(hm, "alpha", 255) if hm else 255)
+        self.hm_alpha.setButtonSymbols(_NO_BTN_INT)
         form.addRow("Heatmap intensity", self.hm_alpha)
 
         self.hm_gamma = QDoubleSpinBox()
         self.hm_gamma.setRange(0.2, 1.5); self.hm_gamma.setSingleStep(0.05)
         self.hm_gamma.setValue(getattr(hm, "gamma", 1.0) if (hm and hasattr(hm, "gamma")) else 1.0)
+        self.hm_gamma.setButtonSymbols(_NO_BTN)
         form.addRow("Heatmap gamma", self.hm_gamma)
 
 
@@ -258,10 +280,42 @@ class SettingsDialog(QDialog):
 
         btns = QHBoxLayout()
         ok = QPushButton("Apply"); ok.setObjectName("ApplyButton"); ok.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel = QPushButton("Cancel"); cancel.setObjectName("CancelButton"); cancel.setCursor(Qt.CursorShape.PointingHandCursor)
-        ok.clicked.connect(self.accept); cancel.clicked.connect(self.reject)
-        btns.addStretch(1); btns.addWidget(cancel); btns.addWidget(ok)
+        clear = QPushButton("Clear"); clear.setObjectName("CancelButton"); clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok.clicked.connect(self.accept); clear.clicked.connect(self._reset_to_defaults)
+        btns.addStretch(1); btns.addWidget(clear); btns.addWidget(ok)
         root.addLayout(btns)
+
+    # ------------------------------------------------------------------
+    # Default values (factory settings)
+    # ------------------------------------------------------------------
+    _DEFAULTS = {
+        "tick":               0.01,
+        "imbalance_factor":   3.0,
+        "min_imbalance_vol":  0,
+        "stacked_min":        3,
+        "va_pct":             70,       # stored as int (70 = 70 %)
+        "hm_alpha":           235,
+        "hm_gamma":           1.00,
+        "bull":               "#26A69A",
+        "bear":               "#F23645",
+        "buy_imb":            "#26A69A",
+        "sell_imb":           "#F23645",
+    }
+
+    def _reset_to_defaults(self) -> None:
+        """Discard all edits and restore every field to the factory default."""
+        d = self._DEFAULTS
+        self.tick.setValue(d["tick"])
+        self.imb.setValue(d["imbalance_factor"])
+        self.minvol.setValue(d["min_imbalance_vol"])
+        self.stacked.setValue(d["stacked_min"])
+        self.vapct.setValue(d["va_pct"])
+        self.hm_alpha.setValue(d["hm_alpha"])
+        self.hm_gamma.setValue(d["hm_gamma"])
+        self.c_bull._color = QColor(d["bull"]);  self.c_bull._refresh()
+        self.c_bear._color = QColor(d["bear"]);  self.c_bear._refresh()
+        self.c_buy._color  = QColor(d["buy_imb"]); self.c_buy._refresh()
+        self.c_sell._color = QColor(d["sell_imb"]); self.c_sell._refresh()
 
     def values(self) -> dict:
         return {

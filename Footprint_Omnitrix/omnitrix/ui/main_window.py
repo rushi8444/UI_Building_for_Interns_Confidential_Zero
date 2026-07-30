@@ -299,7 +299,7 @@ class OmnitrixWindow(QMainWindow):
         self.btn_autofit.setToolTip("Toggle Auto-Fit Price Scale (Y-Axis)")
         self.btn_autofit.setCheckable(True)
         self.btn_autofit.setChecked(True)
-        self.btn_autofit.setStyleSheet("font-size: 11px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 2px 6px;")
+        self._update_autofit_btn_style()
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         right_layout.addWidget(self.btn_autofit)
 
@@ -612,6 +612,8 @@ class OmnitrixWindow(QMainWindow):
         if hasattr(self, '_drawing_buttons'):
             self._set_drawing_tool(getattr(self, "active_drawing_tool", None))
 
+        self._update_autofit_btn_style()
+
         sidebar_hover_bg = "#E3E6EB" if t.name == "light" else "#2A2A2A"
         sidebar_active_border = "#B7BDC7" if t.name == "light" else "#3A3A3A"
         btn_color = t.text
@@ -864,13 +866,22 @@ class OmnitrixWindow(QMainWindow):
             return
         v = dlg.values()
         if self.active_symbol:
-            self.instruments.set_tick(self.active_symbol, v["tick"])
-            if self.fp:
-                self.fp.tick = v["tick"]
-            if self.heatmap:
-                self.heatmap.tick = v["tick"]
-            # tick change reshapes the price->index map; rebuild this symbol
-            self.series.pop(self.active_symbol, None)
+            old_tick = self.instruments.tick(self.active_symbol)
+            new_tick = v["tick"]
+            if abs(old_tick - new_tick) > 1e-7:
+                self.instruments.set_tick(self.active_symbol, new_tick)
+                if self.fp:
+                    self.fp.tick = new_tick
+                if self.heatmap:
+                    self.heatmap.tick = new_tick
+                # Re-aggregate stored trades under new tick index mapping without losing history
+                if self.active_symbol in self.series:
+                    old_series = self.series[self.active_symbol]
+                    trades = list(old_series.trades)
+                    new_series = BarSeries(self.active_symbol, self.instruments, base_tf_s=old_series.base_tf_s)
+                    for tr in trades:
+                        new_series.add_trade(tr)
+                    self.series[self.active_symbol] = new_series
         if self.fp:
             self.fp.configure(
                 imbalance_factor=v["imbalance_factor"],
@@ -893,6 +904,7 @@ class OmnitrixWindow(QMainWindow):
                              buy_imb=v["buy_imb"], sell_imb=v["sell_imb"])
         self._apply_theme()
         self._dirty = True
+        self._tick()
 
     def _on_theme(self, txt: str) -> None:
         self.theme = DARK if txt == "Dark" else LIGHT
@@ -1140,6 +1152,23 @@ class OmnitrixWindow(QMainWindow):
         margin = (hi - lo) * 0.08 or 1.0
         self.price_plot.setYRange(lo - margin, hi + margin, padding=0)
 
+    def _update_autofit_btn_style(self) -> None:
+        if not hasattr(self, 'btn_autofit'):
+            return
+        is_light = getattr(self.theme, "name", "dark") == "light"
+        if getattr(self, '_auto_fit_enabled', True):
+            bg = "#E0F2F1" if is_light else "#1B382B"
+            fg = "#00796B" if is_light else "#00E676"
+            border = "#00897B" if is_light else "#00E676"
+        else:
+            bg = "#F8F9FA" if is_light else "transparent"
+            fg = "#757575" if is_light else "#8A8A8A"
+            border = "#D0D5DD" if is_light else "transparent"
+        self.btn_autofit.setStyleSheet(
+            f"font-size: 11px; font-weight: bold; background: {bg}; color: {fg}; "
+            f"border: 1px solid {border}; border-radius: 3px; padding: 2px 6px;"
+        )
+
     def _toggle_autofit(self, checked=None) -> None:
         if checked is None:
             self._auto_fit_enabled = not getattr(self, '_auto_fit_enabled', True)
@@ -1150,11 +1179,9 @@ class OmnitrixWindow(QMainWindow):
             
         if hasattr(self, 'btn_autofit'):
             self.btn_autofit.setChecked(self._auto_fit_enabled)
+            self._update_autofit_btn_style()
             if self._auto_fit_enabled:
-                self.btn_autofit.setStyleSheet("font-size: 11px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 2px 6px;")
                 self._auto_fit_y()
-            else:
-                self.btn_autofit.setStyleSheet("font-size: 11px; font-weight: bold; background: transparent; color: #8A8A8A; border: 1px solid transparent; border-radius: 3px; padding: 2px 6px;")
 
     def _on_view(self) -> None:
         if not self.active_symbol:
@@ -1173,7 +1200,8 @@ class OmnitrixWindow(QMainWindow):
             cell.auto_scroll = True
             cell._auto_fit_enabled = True
             cell.btn_autofit.setChecked(True)
-            cell.btn_autofit.setStyleSheet("font-size: 10px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 1px 5px;")
+            if hasattr(cell, '_update_autofit_btn_style'):
+                cell._update_autofit_btn_style()
             n = len(bars)
             cell.price_plot.setXRange(max(-1, n - 22), n + 3, padding=0)
             cell._auto_fit_y()

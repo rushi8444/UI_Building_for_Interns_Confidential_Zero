@@ -342,7 +342,7 @@ class ChartCellWidget(QWidget):
         self.btn_autofit.setToolTip("Toggle Auto-Fit Y-Scale")
         self.btn_autofit.setCheckable(True)
         self.btn_autofit.setChecked(True)
-        self.btn_autofit.setStyleSheet("font-size: 10px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 1px 5px;")
+        self._update_autofit_btn_style()
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         hl.addWidget(self.btn_autofit)
 
@@ -575,6 +575,23 @@ class ChartCellWidget(QWidget):
         self.show_cvd_div = on
         self.redraw()
 
+    def _update_autofit_btn_style(self):
+        if not hasattr(self, 'btn_autofit'):
+            return
+        is_light = getattr(self.theme, "name", "dark") == "light"
+        if getattr(self, '_auto_fit_enabled', True):
+            bg = "#E0F2F1" if is_light else "#1B382B"
+            fg = "#00796B" if is_light else "#00E676"
+            border = "#00897B" if is_light else "#00E676"
+        else:
+            bg = "transparent"
+            fg = "#757575" if is_light else "#8A8A8A"
+            border = "#D0D5DD" if is_light else "transparent"
+        self.btn_autofit.setStyleSheet(
+            f"font-size: 10px; font-weight: bold; background: {bg}; color: {fg}; "
+            f"border: 1px solid {border}; border-radius: 3px; padding: 1px 5px;"
+        )
+
     def _toggle_autofit(self, checked=None):
         if checked is None:
             self._auto_fit_enabled = not self._auto_fit_enabled
@@ -584,13 +601,11 @@ class ChartCellWidget(QWidget):
             self._auto_fit_enabled = True
 
         self.btn_autofit.setChecked(self._auto_fit_enabled)
+        self._update_autofit_btn_style()
         if self._auto_fit_enabled:
             self.auto_scroll = True
-            self.btn_autofit.setStyleSheet("font-size: 10px; font-weight: bold; background: #2A2A2A; color: #00E676; border: 1px solid #00E676; border-radius: 3px; padding: 1px 5px;")
             self._auto_fit_y()
             self.redraw()
-        else:
-            self.btn_autofit.setStyleSheet("font-size: 10px; font-weight: bold; background: transparent; color: #8A8A8A; border: 1px solid transparent; border-radius: 3px; padding: 1px 5px;")
 
     def _auto_fit_y(self):
         if not self.active_symbol:
@@ -813,3 +828,4 @@ class ChartCellWidget(QWidget):
                         "QMenu::item { padding: 6px 24px 6px 12px; font-size: 12px; } "
                         "QMenu::item:selected { background-color: #2A2A2A; color: #FFFFFF; }"
                     )
+        self._update_autofit_btn_style()

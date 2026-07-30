@@ -405,17 +405,25 @@ class SRLinesItem(pg.GraphicsObject):
         self._bounds = QRectF()
         self.setZValue(-12)            # above the heatmap, below trades
 
-    def set_levels(self, support, resistance, x0: float, x1: float, walls: list = None, mid_ti: float = None) -> None:
+    def set_levels(self, support, resistance, x0: float, x1: float, walls: list = None, mid_ti: float = None, zones: list = None) -> None:
         self.prepareGeometryChange()
         self.support, self.resistance = support, resistance
         self.walls = walls or []
+        self.zones = zones or []
         self.mid_ti = mid_ti
         self.x0, self.x1 = x0, x1
-        all_lvs = [lv for lv in (support, resistance) if lv is not None] + self.walls
-        tis = [lv.ti for lv in all_lvs if hasattr(lv, 'ti')]
-        if tis and x1 > x0:
-            lo = (min(tis) - self.zone_ticks - 1) * self.tick
-            hi = (max(tis) + self.zone_ticks + 1) * self.tick
+        
+        all_tis = []
+        if self.zones:
+            for z in self.zones:
+                all_tis.extend([getattr(z, 'p_min_ti', z.peak_ti), getattr(z, 'p_max_ti', z.peak_ti)])
+        else:
+            all_lvs = [lv for lv in (support, resistance) if lv is not None] + self.walls
+            all_tis = [lv.ti for lv in all_lvs if hasattr(lv, 'ti')]
+
+        if all_tis and x1 > x0:
+            lo = (min(all_tis) - self.zone_ticks - 1) * self.tick
+            hi = (max(all_tis) + self.zone_ticks + 1) * self.tick
             self._bounds = QRectF(x0, lo, x1 - x0, hi - lo)
         else:
             self._bounds = QRectF()
@@ -425,6 +433,59 @@ class SRLinesItem(pg.GraphicsObject):
         return self._bounds
 
     def paint(self, p: QPainter, *args) -> None:
+        tick = self.tick
+        x0, x1 = self.x0, self.x1
+        if x1 <= x0:
+            return
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        tr = p.transform()
+        mid = self.mid_ti
+
+        if hasattr(self, 'zones') and self.zones:
+            p.save()
+            p.resetTransform()
+            for z in self.zones:
+                peak_ti = getattr(z, 'peak_ti', getattr(z, 'ti', None))
+                if peak_ti is None:
+                    continue
+                is_bid = getattr(z, 'side', 'bid') == 'bid' or (mid is not None and peak_ti < mid)
+                base_color = QColor(0, 230, 118) if is_bid else QColor(255, 42, 42)
+                tag = "S" if is_bid else "R"
+                vol = getattr(z, 'total_volume', getattr(z, 'size', 1000))
+
+                # Map data coords -> screen coords (pixels)
+                peak_y_data = peak_ti * tick
+                pt_left  = tr.map(QPointF(x0, peak_y_data))
+                pt_right = tr.map(QPointF(x1, peak_y_data))
+                pt_above = tr.map(QPointF(x0, peak_y_data + tick))
+                px_left  = pt_left.x()
+                px_right = pt_right.x()
+                px_y     = pt_left.y()
+                px_tick  = abs(pt_above.y() - px_y)          # 1 tick in screen pixels
+
+                # Subtle highlight band: exactly ±1 tick above/below the rule line
+                band_h_px = max(2.0, px_tick * 2.4)
+                band_y_px = px_y - band_h_px / 2.0
+                band_brush = QBrush(QColor(base_color.red(), base_color.green(), base_color.blue(), 35))
+                p.fillRect(QRectF(px_left, band_y_px, px_right - px_left, band_h_px), band_brush)
+
+                # Crisp 2px rule line at peak price tick
+                p.setPen(QPen(base_color, 2.0, Qt.PenStyle.SolidLine))
+                p.drawLine(QPointF(px_left, px_y), QPointF(px_right, px_y))
+
+                # Right-aligned badge label: "S 15K" / "R 22K"
+                p.setFont(self.font)
+                fm = p.fontMetrics()
+                label = f"{tag} {_bmfmt(int(vol))}"
+                w = fm.horizontalAdvance(label) + 10
+                box = QRectF(px_right - w - 4, px_y - 9, w, 18)
+                p.fillRect(box, QColor(base_color.red(), base_color.green(), base_color.blue(), 220))
+                p.setPen(QPen(QColor("#06131E"), 1.0))
+                p.drawText(box, Qt.AlignmentFlag.AlignCenter, label)
+            p.restore()
+            return
+
+        # Fallback for legacy Level objects
         all_lvs = []
         seen_tis = set()
         if self.walls:
@@ -439,39 +500,33 @@ class SRLinesItem(pg.GraphicsObject):
 
         if not all_lvs:
             return
-        tick = self.tick
-        x0, x1 = self.x0, self.x1
-        if x1 <= x0:
-            return
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        tr = p.transform()
 
-        mid = self.mid_ti
         for lv in all_lvs:
             y = lv.ti * tick
-            zone = self.zone_ticks * tick
             if mid is not None and lv.ti < mid:
-                color = QColor(0, 230, 118)    # Bid support wall (emerald green)
+                color = QColor(0, 230, 118)
                 tag = "S"
             elif mid is not None and lv.ti > mid:
-                color = QColor(255, 42, 42)    # Ask resistance wall (red)
+                color = QColor(255, 42, 42)
                 tag = "R"
             else:
-                color = QColor(235, 240, 245)  # Key liquidity node (white/light)
+                color = QColor(235, 240, 245)
                 tag = "W"
 
-            p.setPen(pg.mkPen(color, width=2))
+            vol = getattr(lv, 'size', 1000)
+            line_w = float(min(3.0, max(1.2, 1.2 + (vol / 5000.0))))
+            p.setPen(QPen(color, line_w))
             p.drawLine(QPointF(x0, y), QPointF(x1, y))
 
             pt = tr.map(QPointF(x1, y))
-            label = f"{tag} {_bmfmt(lv.size)}"
+            label = f"{tag} {_bmfmt(vol)}"
             p.save(); p.resetTransform()
             p.setFont(self.font)
             fm = p.fontMetrics()
             w = fm.horizontalAdvance(label) + 8
             box = QRectF(pt.x() - w - 4, pt.y() - 8, w, 16)
             p.fillRect(box, QColor(color.red(), color.green(), color.blue(), 215))
-            p.setPen(pg.mkPen("#06131E"))
+            p.setPen(QPen(QColor("#06131E"), 1.0))
             p.drawText(box, Qt.AlignmentFlag.AlignCenter, label)
             p.restore()
 
