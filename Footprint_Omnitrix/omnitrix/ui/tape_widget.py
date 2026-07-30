@@ -35,19 +35,39 @@ class TapeWidget(QWidget):
         self._timer.timeout.connect(self.update)
         self._timer.start(150)
 
+    def set_theme(self, theme) -> None:
+        self.theme = theme
+        self.update()
+
     def paintEvent(self, _) -> None:
         p = QPainter(self)
-        p.fillRect(self.rect(), BG)
+        t = getattr(self, "theme", None) or getattr(self.window(), "theme", None)
+        if t and getattr(t, "name", "dark") == "light":
+            bg_col = QColor("#FFFFFF")
+            text_col = QColor("#101828")
+            header_col = QColor("#667085")
+            grid_col = QColor("#E3E6EB")
+            buy_col = QColor(t.bull)
+            sell_col = QColor(t.bear)
+        else:
+            bg_col = BG
+            text_col = TEXT
+            header_col = QColor(140, 147, 160)
+            grid_col = GRID
+            buy_col = BUY
+            sell_col = SELL
+
+        p.fillRect(self.rect(), bg_col)
         w = self.width()
         col_time, col_price, col_size = 8, int(w * 0.42), int(w * 0.72)
 
         # header
         p.setFont(self.header_font)
-        p.setPen(pg.mkPen(QColor(140, 147, 160)))
+        p.setPen(pg.mkPen(header_col))
         p.drawText(col_time, 14, "TIME")
         p.drawText(col_price, 14, "PRICE")
         p.drawText(col_size, 14, "SIZE")
-        p.setPen(pg.mkPen(GRID))
+        p.setPen(pg.mkPen(grid_col))
         p.drawLine(0, 20, w, 20)
 
         src = self._get_source()
@@ -61,11 +81,11 @@ class TapeWidget(QWidget):
         for x, ti, size, aggr in rows:
             is_buy = aggr.value == "buy"
             is_block = size >= self.block_size
-            base = BUY if is_buy else (SELL if aggr.value == "sell" else QColor(120, 124, 132))
+            base = buy_col if is_buy else (sell_col if aggr.value == "sell" else QColor(120, 124, 132))
             if is_block:
                 c = QColor(base); c.setAlpha(60)
                 p.fillRect(QRectF(0, y, w, self.ROW_H), c)
-            p.setPen(pg.mkPen(TEXT))
+            p.setPen(pg.mkPen(text_col))
             p.drawText(col_time, y + 13, time.strftime("%H:%M:%S", time.localtime(x)))
             p.setPen(pg.mkPen(base))
             p.drawText(col_price, y + 13, f"{ti * tick:.2f}")

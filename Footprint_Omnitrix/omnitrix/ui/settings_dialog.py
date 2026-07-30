@@ -145,10 +145,49 @@ class SettingsDialog(QDialog):
         self.win = win
         self.setWindowTitle("Omnitrix Chart Settings")
         self.setMinimumWidth(380)
-        self.setStyleSheet(DIALOG_STYLE)
-
-        fp = win.fp
+        fp = getattr(win, "fp", None)
+        hm = getattr(win, "heatmap", None)
         t = win.theme
+
+        if getattr(t, "name", "dark") == "light":
+            self.setStyleSheet("""
+                QDialog {
+                    background-color: #FFFFFF;
+                    color: #12161F;
+                    font-family: "Inter", "Segoe UI", sans-serif;
+                    font-size: 10pt;
+                }
+                QLabel {
+                    color: #12161F;
+                    font-size: 10pt;
+                    font-weight: 500;
+                }
+                QLineEdit, QSpinBox, QDoubleSpinBox {
+                    background-color: #F8F9FA;
+                    color: #12161F;
+                    border: 1px solid #D0D5DD;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    selection-background-color: #00897B;
+                    selection-color: #FFFFFF;
+                }
+                QPushButton#ApplyButton {
+                    background-color: #00897B;
+                    color: #FFFFFF;
+                    border-radius: 4px;
+                    padding: 6px 16px;
+                    font-weight: bold;
+                }
+                QPushButton#CancelButton {
+                    background-color: #F2F3F5;
+                    color: #12161F;
+                    border: 1px solid #D0D5DD;
+                    border-radius: 4px;
+                    padding: 6px 16px;
+                }
+            """)
+        else:
+            self.setStyleSheet(DIALOG_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
@@ -171,29 +210,33 @@ class SettingsDialog(QDialog):
 
         self.imb = QDoubleSpinBox()
         self.imb.setRange(1.1, 20.0); self.imb.setSingleStep(0.5)
-        self.imb.setValue(fp.imbalance_factor)
+        self.imb.setValue(getattr(fp, "imbalance_factor", 3.0) if fp else 3.0)
         form.addRow("Imbalance factor ×", self.imb)
 
         self.minvol = QSpinBox()
-        self.minvol.setRange(0, 100000); self.minvol.setValue(fp.min_imbalance_vol)
+        self.minvol.setRange(0, 100000)
+        self.minvol.setValue(getattr(fp, "min_imbalance_vol", 0) if fp else 0)
         form.addRow("Min imbalance vol", self.minvol)
 
         self.stacked = QSpinBox()
-        self.stacked.setRange(2, 20); self.stacked.setValue(fp.stacked_min)
+        self.stacked.setRange(2, 20)
+        self.stacked.setValue(getattr(fp, "stacked_min", 3) if fp else 3)
         form.addRow("Stacked levels ≥", self.stacked)
 
         self.vapct = QSpinBox()
-        self.vapct.setRange(30, 95); self.vapct.setValue(int(fp.va_pct * 100))
+        self.vapct.setRange(30, 95)
+        self.vapct.setValue(int(getattr(fp, "va_pct", 0.70) * 100) if fp else 70)
         self.vapct.setSuffix(" %")
         form.addRow("Value area", self.vapct)
 
         self.hm_alpha = QSpinBox()
-        self.hm_alpha.setRange(20, 255); self.hm_alpha.setValue(win.heatmap.alpha)
+        self.hm_alpha.setRange(20, 255)
+        self.hm_alpha.setValue(getattr(hm, "alpha", 255) if hm else 255)
         form.addRow("Heatmap intensity", self.hm_alpha)
 
         self.hm_gamma = QDoubleSpinBox()
         self.hm_gamma.setRange(0.2, 1.5); self.hm_gamma.setSingleStep(0.05)
-        self.hm_gamma.setValue(win.heatmap.gamma)
+        self.hm_gamma.setValue(getattr(hm, "gamma", 1.0) if (hm and hasattr(hm, "gamma")) else 1.0)
         form.addRow("Heatmap gamma", self.hm_gamma)
 
 

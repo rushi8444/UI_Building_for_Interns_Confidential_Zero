@@ -143,7 +143,7 @@ class PositionDrawer(BaseDrawingROI):
     def _on_region_changed(self):
         eh_pos = self.entry_handle.pos()
         if eh_pos.x() != 0.5:
-            self.entry_handle.setPos([0.5, eh_pos.y()])
+            self.entry_handle.setPos(QPointF(0.5, eh_pos.y()))
         self.entry_pct = self.entry_handle.pos().y()
 
     def paint(self, p, opt, widget):
@@ -156,6 +156,13 @@ class PositionDrawer(BaseDrawingROI):
         tp_rect = QRectF(rect.left(), entry_y, rect.width(), top_y - entry_y)
         sl_rect = QRectF(rect.left(), bot_y, rect.width(), entry_y - bot_y)
 
+        win = widget.window() if widget else None
+        t = getattr(win, "theme", None)
+        is_light = t and getattr(t, "name", "dark") == "light"
+
+        entry_pen = pg.mkPen('#101828' if is_light else '#FFFFFF', width=2)
+        label_pen = pg.mkPen('#101828' if is_light else '#FFFFFF')
+
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(self.tp_brush)
         p.drawRect(tp_rect)
@@ -163,7 +170,7 @@ class PositionDrawer(BaseDrawingROI):
         p.setBrush(self.sl_brush)
         p.drawRect(sl_rect)
         
-        p.setPen(self.entry_pen)
+        p.setPen(entry_pen)
         p.drawLine(QPointF(rect.left(), entry_y), QPointF(rect.right(), entry_y))
 
         world_y = self.pos().y()
@@ -185,7 +192,7 @@ class PositionDrawer(BaseDrawingROI):
         p.save()
         p.resetTransform()
         p.setFont(FONT_LABEL)
-        p.setPen(self.white_pen)
+        p.setPen(label_pen)
         
         p.drawText(rr_pt + QPointF(-25, -6), f"R/R: {rr:.2f}")
         p.drawText(tp_pt + QPointF(-40, 16 if self.is_long else -6), f"TP: {tp_price_world:,.2f}")
@@ -250,9 +257,17 @@ class FixedVolumeProfile(BaseDrawingROI):
 
     def paint(self, p, opt, widget):
         rect = self.boundingRect()
-        p.setPen(self.outline_pen)
-        p.setBrush(self.bg_brush)
-        p.drawRect(rect)
+
+        win = widget.window() if widget else None
+        t = getattr(win, "theme", None)
+        is_light = t and getattr(t, "name", "dark") == "light"
+
+        if self.isSelected():
+            outline = pg.mkPen('#B7BDC7' if is_light else '#444444', width=1, style=Qt.PenStyle.DashLine)
+            p.setPen(outline)
+            bg = QBrush(QColor(0, 0, 0, 10) if is_light else QColor(255, 255, 255, 10))
+            p.setBrush(bg)
+            p.drawRect(rect)
         
         pos_x = self.pos().x()
         size_x = self.size().x()
@@ -317,6 +332,23 @@ class FixedVolumeProfile(BaseDrawingROI):
         box_width = rect.width()
         world_y = self.pos().y()
         
+        if is_light:
+            va_brush = QBrush(QColor(30, 136, 229, 180))       # Vivid Blue #1E88E5
+            non_va_brush = QBrush(QColor(176, 190, 197, 120))  # Light Slate Gray #B0BEC5
+            poc_brush_col = QBrush(QColor(229, 57, 53, 230))   # Crimson Red #E53935
+            poc_pen_col = pg.mkPen('#E53935', width=2)
+            va_pen_col = pg.mkPen('#E65100', width=1.5, style=Qt.PenStyle.DashLine) # Dark Amber / Gold
+            lbl_poc_pen = pg.mkPen('#E53935')
+            lbl_va_pen = pg.mkPen('#E65100')
+        else:
+            va_brush = self.va_bar_brush
+            non_va_brush = self.non_va_bar_brush
+            poc_brush_col = self.poc_brush
+            poc_pen_col = self.poc_pen
+            va_pen_col = self.va_pen
+            lbl_poc_pen = pg.mkPen('#FF1744')
+            lbl_va_pen = pg.mkPen('#FFC107')
+
         p.setPen(Qt.PenStyle.NoPen)
         
         for p_lvl, vol in vol_by_price.items():
@@ -325,24 +357,24 @@ class FixedVolumeProfile(BaseDrawingROI):
             bar_rect = QRectF(rect.right() - bar_width, local_y - self.tick_size/2, bar_width, self.tick_size)
             
             if p_lvl == poc_price:
-                p.setBrush(self.poc_brush)
+                p.setBrush(poc_brush_col)
                 p.drawRect(bar_rect)
             elif p_lvl in va_prices:
-                p.setBrush(self.va_bar_brush)
+                p.setBrush(va_brush)
                 p.drawRect(bar_rect)
             else:
-                p.setBrush(self.non_va_bar_brush)
+                p.setBrush(non_va_brush)
                 p.drawRect(bar_rect)
                 
         # Draw POC line across selected candles
         if poc_price is not None:
             poc_y = poc_price - world_y
-            p.setPen(self.poc_pen)
+            p.setPen(poc_pen_col)
             p.drawLine(QPointF(rect.left(), poc_y), QPointF(rect.right(), poc_y))
 
         # Draw VAH and VAL dashed lines across selected candles
         if vah_price is not None and val_price is not None:
-            p.setPen(self.va_pen)
+            p.setPen(va_pen_col)
             vah_y = vah_price - world_y
             val_y = val_price - world_y
             p.drawLine(QPointF(rect.left(), vah_y), QPointF(rect.right(), vah_y))
@@ -356,17 +388,17 @@ class FixedVolumeProfile(BaseDrawingROI):
         
         if poc_price is not None:
             pt = tr.map(QPointF(rect.right(), poc_price - world_y))
-            p.setPen(pg.mkPen('#FF1744'))
+            p.setPen(lbl_poc_pen)
             p.drawText(pt + QPointF(6, 4), f"POC: {poc_price:,.2f}")
             
         if vah_price is not None:
             pt = tr.map(QPointF(rect.right(), vah_price - world_y))
-            p.setPen(pg.mkPen('#FFC107'))
+            p.setPen(lbl_va_pen)
             p.drawText(pt + QPointF(6, -4), f"VAH: {vah_price:,.2f}")
             
         if val_price is not None:
             pt = tr.map(QPointF(rect.right(), val_price - world_y))
-            p.setPen(pg.mkPen('#FFC107'))
+            p.setPen(lbl_va_pen)
             p.drawText(pt + QPointF(6, 14), f"VAL: {val_price:,.2f}")
             
         p.restore()
@@ -423,47 +455,79 @@ class RangeCPR(BaseDrawingROI):
         self.update()
         
     def paint(self, p, opt, widget):
-        rect = self.boundingRect()
-        p.setPen(self.outline_pen)
-        p.setBrush(QBrush(QColor(255, 255, 255, 5)))
-        p.drawRect(rect)
+        if self.isSelected():
+            rect = self.boundingRect()
+            p.setPen(self.outline_pen)
+            p.setBrush(QBrush(QColor(255, 255, 255, 5)))
+            p.drawRect(rect)
         
         pos_x = self.pos().x()
         size_x = self.size().x()
         x_min = min(pos_x, pos_x + size_x)
         x_max = max(pos_x, pos_x + size_x)
         
-        bars = self.get_bars_cb(x_min, x_max)
-        if not bars:
+        cache_key = (round(x_min, 2), round(x_max, 2))
+        if getattr(self, '_cache_key', None) != cache_key or not hasattr(self, '_cached_cpr_levels'):
+            bars = self.get_bars_cb(x_min, x_max)
+            if not bars:
+                self._cached_cpr_levels = None
+                return
+            high = max(b.high for b in bars)
+            low = min(b.low for b in bars)
+            close = bars[-1].close
+            
+            pivot = (high + low + close) / 3.0
+            bc_calc = (high + low) / 2.0
+            tc_calc = (pivot - bc_calc) + pivot
+            tc = max(tc_calc, bc_calc)
+            bc = min(tc_calc, bc_calc)
+                
+            r1 = (2 * pivot) - low
+            s1 = (2 * pivot) - high
+            self._cached_cpr_levels = (pivot, tc, bc, r1, s1)
+            self._cache_key = cache_key
+            
+        cpr_data = getattr(self, '_cached_cpr_levels', None)
+        if not cpr_data:
             return
-            
-        high = max(b.high for b in bars)
-        low = min(b.low for b in bars)
-        close = bars[-1].close
-        
-        pivot = (high + low + close) / 3.0
-        bc = (high + low) / 2.0
-        tc = (pivot - bc) + pivot
-        if tc < bc:
-            tc, bc = bc, tc
-            
-        r1 = (2 * pivot) - low
-        s1 = (2 * pivot) - high
-        
+        pivot, tc, bc, r1, s1 = cpr_data
+
         world_y = self.pos().y()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+
+        win = widget.window() if widget else None
+        t = getattr(win, "theme", None)
+        is_light = t and getattr(t, "name", "dark") == "light"
+        
+        if is_light:
+            col_p = QColor('#D81B60')     # Deep Magenta
+            col_tc = QColor('#00838F')    # Deep Cyan / Teal
+            col_r1 = QColor('#2E7D32')    # Forest Green
+            col_s1 = QColor('#C62828')    # Crimson Red
+        else:
+            col_p = QColor(getattr(self, "_p_color_hex", "#FF4081"))
+            col_tc = QColor(getattr(self, "_tc_bc_color_hex", "#00BCD4"))
+            col_r1 = QColor(getattr(self, "_r_color_hex", "#00E676"))
+            col_s1 = QColor(getattr(self, "_s_color_hex", "#FF1744"))
+
+        p_pen = pg.mkPen(col_p, width=2, style=Qt.PenStyle.SolidLine)
+        tc_pen = pg.mkPen(col_tc, width=1.5, style=Qt.PenStyle.DotLine)
+        bc_pen = pg.mkPen(col_tc, width=1.5, style=Qt.PenStyle.DotLine)
+        r1_pen = pg.mkPen(col_r1, width=1, style=Qt.PenStyle.DashLine)
+        s1_pen = pg.mkPen(col_s1, width=1, style=Qt.PenStyle.DashLine)
         
         lines = [
-            (pivot, self.p_pen, "P", '#FF4081'),
-            (tc, self.tc_pen, "TC", '#00BCD4'),
-            (bc, self.bc_pen, "BC", '#00BCD4'),
-            (r1, self.r1_pen, "R1", '#00E676'),
-            (s1, self.s1_pen, "S1", '#FF1744'),
+            (pivot, p_pen, "P", col_p),
+            (tc, tc_pen, "TC", col_tc),
+            (bc, bc_pen, "BC", col_tc),
+            (r1, r1_pen, "R1", col_r1),
+            (s1, s1_pen, "S1", col_s1),
         ]
         
         tr = p.transform()
+        rect = self.boundingRect()
         
-        for price_val, pen, label, col_str in lines:
+        for price_val, pen, label, col_q in lines:
             local_y = price_val - world_y
             p.setPen(pen)
             p.drawLine(QPointF(rect.left(), local_y), QPointF(rect.right(), local_y))
@@ -471,7 +535,7 @@ class RangeCPR(BaseDrawingROI):
             screen_pt = tr.map(QPointF(rect.right(), local_y))
             p.save()
             p.resetTransform()
-            p.setPen(pg.mkPen(col_str))
+            p.setPen(pg.mkPen(col_q))
             p.setFont(FONT_LABEL)
             p.drawText(screen_pt + QPointF(6, 4), f"{label}: {price_val:,.2f}")
             p.restore()

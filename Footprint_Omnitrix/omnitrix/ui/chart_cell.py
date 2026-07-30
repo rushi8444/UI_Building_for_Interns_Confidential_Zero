@@ -52,17 +52,40 @@ class MenuDropdown(QPushButton):
             "padding: 2px 8px; border-radius: 3px;"
         )
         self.menu = QMenu(self)
-        self.menu.setStyleSheet(
-            "QMenu { background-color: #1A1D24; color: #E8E8E8; border: 1px solid #3A3A3A; border-radius: 6px; padding: 4px 0px; max-height: 600px; } "
-            "QMenu::item { padding: 6px 24px 6px 12px; font-size: 12px; } "
-            "QMenu::item:selected { background-color: #2A2A2A; color: #FFFFFF; }"
-        )
         self.setMenu(self.menu)
         self._items = list(items) if items else []
         self._current_text = title
         self._cb = on_select_cb
         self._actions = {}
         self._rebuild_menu()
+        from ..render import DARK
+        self.set_theme(DARK)
+
+    def set_theme(self, theme):
+        self.theme = theme
+        t = theme
+        if getattr(t, "name", "dark") == "light":
+            self.setStyleSheet(
+                "font-size: 11px; font-weight: 500; color: #12161F; "
+                "background-color: #FFFFFF; border: 1px solid #D0D5DD; "
+                "padding: 2px 8px; border-radius: 3px;"
+            )
+            self.menu.setStyleSheet(
+                "QMenu { background-color: #FFFFFF; color: #12161F; border: 1px solid #D0D5DD; border-radius: 6px; padding: 4px 0px; max-height: 600px; } "
+                "QMenu::item { padding: 6px 24px 6px 12px; font-size: 12px; } "
+                "QMenu::item:selected { background-color: #F2F3F5; color: #12161F; }"
+            )
+        else:
+            self.setStyleSheet(
+                "font-size: 11px; font-weight: 500; color: #E8E8E8; "
+                "background-color: #2A2A2A; border: 1px solid #3A3A3A; "
+                "padding: 2px 8px; border-radius: 3px;"
+            )
+            self.menu.setStyleSheet(
+                "QMenu { background-color: #1A1D24; color: #E8E8E8; border: 1px solid #3A3A3A; border-radius: 6px; padding: 4px 0px; max-height: 600px; } "
+                "QMenu::item { padding: 6px 24px 6px 12px; font-size: 12px; } "
+                "QMenu::item:selected { background-color: #2A2A2A; color: #FFFFFF; }"
+            )
 
     def _rebuild_menu(self):
         self.menu.clear()
@@ -757,3 +780,36 @@ class ChartCellWidget(QWidget):
                 ax = plot.getAxis(ax_name)
                 ax.setPen(pg.mkPen(t.axis))
                 ax.setTextPen(pg.mkPen(t.text))
+        if hasattr(self, 'header'):
+            self.header.setStyleSheet(
+                f"QFrame#cell_header {{ background-color: {t.panel}; border-bottom: 1px solid {t.grid}; max-height: 32px; }}"
+                f" QLabel {{ color: {t.text}; }}"
+            )
+        for dropdown in (getattr(self, 'sym_combo', None), getattr(self, 'tf_combo', None), getattr(self, 'mode_combo', None)):
+            if dropdown and hasattr(dropdown, 'set_theme'):
+                dropdown.set_theme(t)
+        if hasattr(self, 'btn_ind') and self.btn_ind:
+            if t.name == "light":
+                self.btn_ind.setStyleSheet(
+                    "font-size: 11px; font-weight: 500; color: #12161F; "
+                    "background-color: #FFFFFF; border: 1px solid #D0D5DD; "
+                    "padding: 2px 8px; border-radius: 3px;"
+                )
+                if hasattr(self, 'menu_ind') and self.menu_ind:
+                    self.menu_ind.setStyleSheet(
+                        "QMenu { background-color: #FFFFFF; color: #12161F; border: 1px solid #D0D5DD; border-radius: 6px; padding: 4px 0px; } "
+                        "QMenu::item { padding: 6px 24px 6px 12px; font-size: 12px; } "
+                        "QMenu::item:selected { background-color: #F2F3F5; color: #12161F; }"
+                    )
+            else:
+                self.btn_ind.setStyleSheet(
+                    "font-size: 11px; font-weight: 500; color: #E8E8E8; "
+                    "background-color: #2A2A2A; border: 1px solid #3A3A3A; "
+                    "padding: 2px 8px; border-radius: 3px;"
+                )
+                if hasattr(self, 'menu_ind') and self.menu_ind:
+                    self.menu_ind.setStyleSheet(
+                        "QMenu { background-color: #1A1D24; color: #E8E8E8; border: 1px solid #3A3A3A; border-radius: 6px; padding: 4px 0px; } "
+                        "QMenu::item { padding: 6px 24px 6px 12px; font-size: 12px; } "
+                        "QMenu::item:selected { background-color: #2A2A2A; color: #FFFFFF; }"
+                    )

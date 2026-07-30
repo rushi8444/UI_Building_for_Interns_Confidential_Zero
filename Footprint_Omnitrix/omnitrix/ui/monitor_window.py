@@ -61,12 +61,28 @@ class MarketMonitorWindow(QMainWindow):
             if i < self.table.columnCount():
                 self.table.setColumnWidth(i, w)
 
+        if hasattr(app_window, 'theme'):
+            self.set_theme(app_window.theme)
+        else:
+            self.set_theme(DARK)
+
+        self._rows: dict[str, int] = {}
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self.refresh)
+        self._timer.start(500)
+        self.refresh()
+
+    def set_theme(self, theme: Theme) -> None:
+        self.theme = theme
+        t = theme
+        alt_bg = "#F8F9FA" if t.name == "light" else "#161616"
+        item_border = "#E3E6EB" if t.name == "light" else "#1C1C1C"
         self.setStyleSheet(
-            f"QMainWindow{{background:{BG};}}"
-            "QTableWidget{"
-            " background-color:#121212;"
-            " alternate-background-color:#161616;"
-            " color:#DFE4E1;"
+            f"QMainWindow{{background:{t.bg};}}"
+            f"QTableWidget{{"
+            f" background-color:{t.bg};"
+            f" alternate-background-color:{alt_bg};"
+            f" color:{t.text};"
             " border:none;"
             " font-family: 'JetBrains Mono', 'Consolas', monospace;"
             " font-size: 12px;"
@@ -75,25 +91,21 @@ class MarketMonitorWindow(QMainWindow):
             "QTableWidget::item{"
             " padding-left: 8px;"
             " padding-right: 8px;"
-            " border-bottom: 1px solid #1C1C1C;"
+            f" border-bottom: 1px solid {item_border};"
             "}"
             "QTableWidget::item:selected{"
-            " background-color: rgba(0, 137, 123, 0.18);"
-            " color: #70D8C8;"
+            f" background-color: {t.grid};"
+            f" color: {t.text};"
             "}"
             "QHeaderView::section{"
-            " background-color:#1A1A1A;"
-            " color:#879390;"
-            " padding: 6px 8px;"
-            " border:none;"
-            " border-bottom: 1px solid #2C2C2C;"
-            " font-family: 'Inter', sans-serif;"
-            " font-size: 11px;"
-            " font-weight: 600;"
+            f" background-color:{t.panel};"
+            f" color:{t.text};"
+            " font-size: 10px;"
+            " font-weight: 700;"
             " text-transform: uppercase;"
-            "}"
-            "QTableWidget::item:hover{"
-            " background-color:#1E1E1E;"
+            " border: none;"
+            f" border-bottom: 1px solid {t.grid};"
+            " padding: 4px;"
             "}"
         )
 

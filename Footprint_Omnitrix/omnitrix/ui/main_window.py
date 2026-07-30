@@ -219,12 +219,12 @@ class OmnitrixWindow(QMainWindow):
         bl = QHBoxLayout(brand_w)
         bl.setContentsMargins(0,0,0,0)
         bl.setSpacing(4)
-        lbl_icon = QLabel("\uf190")
-        lbl_icon.setStyleSheet("color:#26A69A; font-family: 'Material Symbols Outlined'; font-size: 18px;")
-        lbl_txt = QLabel("Omnitrix Order Flow")
-        lbl_txt.setStyleSheet("color:#E8E8E8; font-weight:bold; font-size:13px;")
-        bl.addWidget(lbl_icon)
-        bl.addWidget(lbl_txt)
+        self.lbl_brand_icon = QLabel("\uf190")
+        self.lbl_brand_icon.setStyleSheet("color:#26A69A; font-family: 'Material Symbols Outlined'; font-size: 18px;")
+        self.lbl_brand_txt = QLabel("Omnitrix Order Flow")
+        self.lbl_brand_txt.setStyleSheet("color:#E8E8E8; font-weight:bold; font-size:13px;")
+        bl.addWidget(self.lbl_brand_icon)
+        bl.addWidget(self.lbl_brand_txt)
         left_layout.addWidget(brand_w)
 
         # Separator Line (vertical)
@@ -241,9 +241,9 @@ class OmnitrixWindow(QMainWindow):
         self.sym_combo.hide()
 
         # Layout Grid Selector Dropdown
-        lbl_layout = QLabel("Grid")
-        lbl_layout.setStyleSheet("color:#8A8A8A; font-size:12px; margin-left: 8px;")
-        left_layout.addWidget(lbl_layout)
+        self.lbl_layout = QLabel("Grid")
+        self.lbl_layout.setStyleSheet("color:#8A8A8A; font-size:12px; margin-left: 8px;")
+        left_layout.addWidget(self.lbl_layout)
 
         self.layout_combo = MenuDropdown("1x1", ["1x1", "2x1", "1x2", "2x2"], on_select_cb=self._set_layout_mode)
         left_layout.addWidget(self.layout_combo)
@@ -576,6 +576,46 @@ class OmnitrixWindow(QMainWindow):
         for cell in self.cells:
             cell.theme = t
             cell._apply_theme()
+        for win in list(self._bookmap_windows):
+            if win and hasattr(win, 'set_theme'):
+                try:
+                    win.set_theme(t)
+                except Exception:
+                    pass
+        if hasattr(self, 'data_window_widget') and hasattr(self.data_window_widget, 'set_theme'):
+            self.data_window_widget.set_theme(t)
+        if hasattr(self, 'layout_combo') and hasattr(self.layout_combo, 'set_theme'):
+            self.layout_combo.set_theme(t)
+        if hasattr(self, 'stats') and self.stats:
+            if hasattr(self.stats, 'set_theme'):
+                self.stats.set_theme(t)
+            else:
+                self.stats.update()
+        if hasattr(self, 'tape') and self.tape:
+            if hasattr(self.tape, 'set_theme'):
+                self.tape.set_theme(t)
+            else:
+                self.tape.update()
+        if hasattr(self, 'signals') and self.signals:
+            if hasattr(self.signals, 'set_theme'):
+                self.signals.set_theme(t)
+            else:
+                self.signals.update()
+
+        if hasattr(self, 'lbl_brand_txt') and self.lbl_brand_txt:
+            self.lbl_brand_txt.setStyleSheet(f"color: {t.text}; font-weight: bold; font-size: 13px;")
+        if hasattr(self, 'lbl_layout') and self.lbl_layout:
+            self.lbl_layout.setStyleSheet(f"color: {t.text}; font-size: 12px; margin-left: 8px;")
+        if hasattr(self, 'lbl_link') and self.lbl_link:
+            self.lbl_link.setStyleSheet(f"color: {t.text}; font-weight: 600;")
+
+        if hasattr(self, '_drawing_buttons'):
+            self._set_drawing_tool(getattr(self, "active_drawing_tool", None))
+
+        sidebar_hover_bg = "#E3E6EB" if t.name == "light" else "#2A2A2A"
+        sidebar_active_border = "#B7BDC7" if t.name == "light" else "#3A3A3A"
+        btn_color = t.text
+
         self.setStyleSheet(
             f"QMainWindow {{ background-color:{t.bg}; }}"
             
@@ -590,13 +630,13 @@ class OmnitrixWindow(QMainWindow):
             f" QCheckBox::indicator {{ width:14px; height:14px; border:1px solid {t.grid}; border-radius:3px; background-color:{t.bg}; }}"
             f" QCheckBox::indicator:checked {{ background-color:{t.bull}; border-color:{t.bull}; }}"
             
-            f" QComboBox {{ background-color:rgba(42, 42, 42, 0.6); color:{t.text}; border:1px solid {t.grid}; border-radius:4px; padding:4px 10px; min-height:22px; font-size:12px; font-weight:500; font-family:'Inter', sans-serif; }}"
+            f" QComboBox {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; border-radius:4px; padding:4px 10px; min-height:22px; font-size:12px; font-weight:500; font-family:'Inter', sans-serif; }}"
             f" QComboBox:hover {{ background-color:{t.grid}; }}"
             f" QComboBox::drop-down {{ border:none; width:0px; }}"
             f" QComboBox::down-arrow {{ image: none; }}"
             f" QComboBox QAbstractItemView {{ background-color:{t.panel}; color:{t.text}; border:1px solid {t.grid}; selection-background-color:{t.grid}; outline: none; }}"
             
-            f" QPushButton {{ background-color:transparent; color:#8A8A8A; border:1px solid transparent; border-radius:4px; padding:6px 12px; font-weight:500; font-size:12px; font-family:'Inter', sans-serif; }}"
+            f" QPushButton {{ background-color:transparent; color:{btn_color}; border:1px solid transparent; border-radius:4px; padding:6px 12px; font-weight:500; font-size:12px; font-family:'Inter', sans-serif; }}"
             f" QPushButton:hover {{ background-color:{t.grid}; color:{t.text}; }}"
             f" QPushButton:pressed {{ background-color:{t.grid}; color:{t.text}; }}"
             f" QPushButton:checked {{ background-color:{t.bull}; color:#ffffff; border-color:{t.bull}; font-weight:600; }}"
@@ -607,17 +647,17 @@ class OmnitrixWindow(QMainWindow):
             f" QMenu::item:selected {{ background-color:{t.grid}; }}"
             
             f" QDockWidget {{ color:{t.text}; titlebar-close-icon:none; titlebar-normal-icon:none; font-family:'Inter', sans-serif; }}"
-            f" QDockWidget::title {{ background-color:{t.panel}; color:#8A8A8A; font-weight:700; font-size:11px; text-transform:uppercase; padding:8px 12px; border-bottom:1px solid {t.grid}; border-top:1px solid {t.grid}; }}"
+            f" QDockWidget::title {{ background-color:{t.panel}; color:{t.text}; font-weight:700; font-size:11px; text-transform:uppercase; padding:8px 12px; border-bottom:1px solid {t.grid}; border-top:1px solid {t.grid}; }}"
             
-            f" QTabBar::tab {{ background-color:{t.bg}; color:#8A8A8A; padding:8px 16px; border:1px solid {t.grid}; border-bottom:none; font-size:11px; font-weight:600; font-family:'Inter', sans-serif; }}"
+            f" QTabBar::tab {{ background-color:{t.bg}; color:{t.text}; padding:8px 16px; border:1px solid {t.grid}; border-bottom:none; font-size:11px; font-weight:600; font-family:'Inter', sans-serif; }}"
             f" QTabBar::tab:selected {{ background-color:{t.panel}; color:{t.text}; border-top:2px solid {t.bull}; }}"
             f" QTabWidget::pane {{ border:1px solid {t.grid}; }}"
             
-            f" QPushButton#sidebar_icon {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: #8A8A8A; border: 1px solid transparent; background: transparent; }}"
-            f" QPushButton#sidebar_icon:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
-            f" QPushButton#sidebar_icon_active {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: #E8E8E8; background-color: #2A2A2A; border: 1px solid #3A3A3A; }}"
-            f" QPushButton#sidebar_icon_danger {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: #8A8A8A; border: 1px solid transparent; background: transparent; }}"
-            f" QPushButton#sidebar_icon_danger:hover {{ background-color: #2A2A2A; color: #E8E8E8; }}"
+            f" QPushButton#sidebar_icon {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: {t.text}; border: 1px solid transparent; background: transparent; }}"
+            f" QPushButton#sidebar_icon:hover {{ background-color: {sidebar_hover_bg}; color: {t.text}; }}"
+            f" QPushButton#sidebar_icon_active {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: {t.text}; background-color: {sidebar_hover_bg}; border: 1px solid {sidebar_active_border}; }}"
+            f" QPushButton#sidebar_icon_danger {{ font-family: 'Material Symbols Outlined'; font-size: 20px; padding: 0px; margin: 2px; border-radius: 6px; color: {t.text}; border: 1px solid transparent; background: transparent; }}"
+            f" QPushButton#sidebar_icon_danger:hover {{ background-color: {sidebar_hover_bg}; color: {t.text}; }}"
         )
 
     # ---- feed drain + redraw (GUI thread) --------------------------------
@@ -786,6 +826,7 @@ class OmnitrixWindow(QMainWindow):
     def _open_profile(self) -> None:
         sym = self.active_symbol or "QQQ"
         win = ProfileWindow(self._profile(sym), self.instruments.tick(sym), self)
+        win.set_theme(self.theme)
         self._bookmap_windows.append(win)
         win.show()
         win._fit()
@@ -793,22 +834,26 @@ class OmnitrixWindow(QMainWindow):
     def _open_analytics(self) -> None:
         sym = self.active_symbol or "QQQ"
         win = AnalyticsWindow(self._bookmap(sym), self.instruments.tick(sym), self)
+        win.set_theme(self.theme)
         self._bookmap_windows.append(win)
         win.show()
 
     def _open_dom(self) -> None:
         win = DomLadderWindow(self, self)
+        win.set_theme(self.theme)
         self._bookmap_windows.append(win)
         win.show()
 
     def _open_monitor(self) -> None:
         win = MarketMonitorWindow(self, self)
+        win.set_theme(self.theme)
         self._bookmap_windows.append(win)
         win.show()
 
     def _open_bookmap(self) -> None:
         sym = self.active_symbol or "QQQ"
         win = BookmapWindow(self._bookmap(sym), self.instruments.tick(sym), self)
+        win.set_theme(self.theme)
         win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
         self._bookmap_windows.append(win)
         win.show()
@@ -820,19 +865,24 @@ class OmnitrixWindow(QMainWindow):
         v = dlg.values()
         if self.active_symbol:
             self.instruments.set_tick(self.active_symbol, v["tick"])
-            self.fp.tick = v["tick"]
-            self.heatmap.tick = v["tick"]
+            if self.fp:
+                self.fp.tick = v["tick"]
+            if self.heatmap:
+                self.heatmap.tick = v["tick"]
             # tick change reshapes the price->index map; rebuild this symbol
             self.series.pop(self.active_symbol, None)
-        self.fp.configure(
-            imbalance_factor=v["imbalance_factor"],
-            min_imbalance_vol=v["min_imbalance_vol"],
-            stacked_min=v["stacked_min"],
-            va_pct=v["va_pct"],
-            show_candles=v.get("show_candles", True),
-        )
-        self.heatmap.alpha = v["hm_alpha"]
-        self.heatmap.gamma = v["hm_gamma"]
+        if self.fp:
+            self.fp.configure(
+                imbalance_factor=v["imbalance_factor"],
+                min_imbalance_vol=v["min_imbalance_vol"],
+                stacked_min=v["stacked_min"],
+                va_pct=v["va_pct"],
+                show_candles=v.get("show_candles", True),
+            )
+        if self.heatmap and hasattr(self.heatmap, "alpha"):
+            self.heatmap.alpha = v["hm_alpha"]
+        if self.heatmap and hasattr(self.heatmap, "gamma"):
+            self.heatmap.gamma = v["hm_gamma"]
         self.show_cvd_div = v.get("show_cvd_div", False)
         if hasattr(self, "chart_grid"):
             for cell in self.chart_grid.cells:
@@ -1026,12 +1076,22 @@ class OmnitrixWindow(QMainWindow):
         self.active_drawing_tool = tool_name
         self._drawing_start_point = None
 
+        t = getattr(self, "theme", None)
+        is_light = t and getattr(t, "name", "dark") == "light"
+
+        active_bg = "#E3E6EB" if is_light else "#2A2A2A"
+        active_col = "#00897B" if is_light else "#00E676"
+        inactive_col = "#8A8A8A"
+
         if hasattr(self, '_drawing_buttons'):
             for name, btn in self._drawing_buttons.items():
                 if name == tool_name:
-                    btn.setStyleSheet("color: #00E676; background-color: #2A2A2A; border: 1px solid #00E676; border-radius: 4px;")
+                    btn.setStyleSheet(f"color: {active_col}; background-color: {active_bg}; border: 1px solid {active_col}; border-radius: 6px;")
                 else:
-                    btn.setStyleSheet("color: #8A8A8A; background: transparent; border: 1px solid transparent; border-radius: 4px;")
+                    btn.setStyleSheet(f"color: {inactive_col}; background: transparent; border: 1px solid transparent; border-radius: 6px;")
+
+        if hasattr(self, 'btn_clear_drawings') and self.btn_clear_drawings:
+            self.btn_clear_drawings.setStyleSheet(f"color: {inactive_col}; background: transparent; border: 1px solid transparent; border-radius: 6px;")
 
         if self.price_plot and self.price_plot.getViewBox():
             self.price_plot.getViewBox().setMouseMode(pg.ViewBox.PanMode)

@@ -60,17 +60,35 @@ class SignalsPanel(QWidget):
                 self._events = []
         self.update()
 
+    def set_theme(self, theme) -> None:
+        self.theme = theme
+        self.update()
+
     def paintEvent(self, _) -> None:
         p = QPainter(self)
-        p.fillRect(self.rect(), BG)
+        t = getattr(self, "theme", None) or getattr(self.app, "theme", None)
+        if t and getattr(t, "name", "dark") == "light":
+            bg_col = QColor("#FFFFFF")
+            head_col = QColor("#667085")
+            text_col = QColor("#101828")
+            dim_col = QColor("#667085")
+            rule_col = QColor("#E3E6EB")
+        else:
+            bg_col = BG
+            head_col = HEAD
+            text_col = TEXT
+            dim_col = DIM
+            rule_col = RULE
+
+        p.fillRect(self.rect(), bg_col)
         w = self.width()
 
-        p.setFont(self.f_head); p.setPen(HEAD)
+        p.setFont(self.f_head); p.setPen(head_col)
         p.drawText(8, 16, "TYPE   PRICE      SIZE   TIME")
-        p.setPen(RULE); p.drawLine(8, 21, w - 8, 21)
+        p.setPen(rule_col); p.drawLine(8, 21, w - 8, 21)
 
         if not self._events:
-            p.setFont(self.f_row); p.setPen(DIM)
+            p.setFont(self.f_row); p.setPen(dim_col)
             p.drawText(10, 40, "no signals yet…")
             return
 
@@ -81,15 +99,15 @@ class SignalsPanel(QWidget):
         p.setFont(self.f_row)
         y = 26
         for ev in self._events:
-            col = KIND_COL.get(ev["kind"], TEXT)
+            col = KIND_COL.get(ev["kind"], text_col)
             p.setPen(col)
             p.drawText(9, y + 13, KIND_TAG.get(ev["kind"], "?"))
-            p.setPen(TEXT)
+            p.setPen(text_col)
             p.drawText(52, y + 13, f"{ev['ti'] * tick:,.2f}")
             p.drawText(QRectF(0, y, w - 66, self.ROW_H),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        _fmt(ev["size"]))
-            p.setPen(DIM)
+            p.setPen(dim_col)
             p.drawText(QRectF(0, y, w - 8, self.ROW_H),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        time.strftime("%H:%M:%S",

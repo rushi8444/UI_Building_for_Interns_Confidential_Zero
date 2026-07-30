@@ -103,13 +103,35 @@ class StatsPanel(QWidget):
             ]
         return rows
 
+    def set_theme(self, theme) -> None:
+        self.theme = theme
+        self.update()
+
     # ---- paint -----------------------------------------------------------
     def paintEvent(self, _) -> None:
         p = QPainter(self)
-        p.fillRect(self.rect(), BG)
+        t = getattr(self, "theme", None) or getattr(self.app, "theme", None)
+        if t and getattr(t, "name", "dark") == "light":
+            bg_col = QColor("#FFFFFF")
+            head_col = QColor("#667085")
+            lbl_col = QColor("#344054")
+            val_col = QColor("#101828")
+            rule_col = QColor("#E3E6EB")
+            up_col = QColor(t.bull)
+            down_col = QColor(t.bear)
+        else:
+            bg_col = BG
+            head_col = HEAD
+            lbl_col = LABEL
+            val_col = VALUE
+            rule_col = RULE
+            up_col = UP
+            down_col = DOWN
+
+        p.fillRect(self.rect(), bg_col)
         rows = self._collect()
         if not rows:
-            p.setFont(self.f_row); p.setPen(LABEL)
+            p.setFont(self.f_row); p.setPen(lbl_col)
             p.drawText(10, 24, "waiting for data…")
             return
         w = self.width()
@@ -117,18 +139,18 @@ class StatsPanel(QWidget):
         for label, value in rows:
             if value is None:                       # section header
                 y += 6
-                p.setFont(self.f_head); p.setPen(HEAD)
+                p.setFont(self.f_head); p.setPen(head_col)
                 p.drawText(8, y + 12, label)
-                p.setPen(RULE)
+                p.setPen(rule_col)
                 p.drawLine(8, y + 16, w - 8, y + 16)
                 y += self.ROW_H + 2
                 continue
             p.setFont(self.f_row)
-            p.setPen(LABEL)
+            p.setPen(lbl_col)
             p.drawText(10, y + 13, label)
-            col = VALUE
+            col = val_col
             if label in ("Change", "Delta") and value.startswith(("+", "-")):
-                col = UP if value.startswith("+") else DOWN
+                col = up_col if value.startswith("+") else down_col
             p.setPen(col)
             p.drawText(QRectF(0, y, w - 10, self.ROW_H),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,

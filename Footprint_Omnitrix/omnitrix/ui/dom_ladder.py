@@ -199,5 +199,16 @@ class DomLadderWindow(QMainWindow):
         sym = app_window.active_symbol or ""
         self.setWindowTitle(f"Omnitrix DOM Ladder — {sym}")
         self.resize(520, 820)
-        self.setCentralWidget(DomLadderWidget(app_window, self))
-        self.setStyleSheet("QMainWindow { background: #121212; }")
+        self.dom_widget = DomLadderWidget(app_window, self)
+        self.setCentralWidget(self.dom_widget)
+        if hasattr(app_window, 'theme'):
+            self.set_theme(app_window.theme)
+        else:
+            self.setStyleSheet("QMainWindow { background: #121212; }")
+
+    def set_theme(self, theme: Theme) -> None:
+        self.theme = theme
+        t = theme
+        self.setStyleSheet(f"QMainWindow {{ background: {t.bg}; }}")
+        if hasattr(self, 'dom_widget'):
+            self.dom_widget.setStyleSheet(f"background: {t.bg}; color: {t.text};")

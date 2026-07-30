@@ -78,6 +78,30 @@ class DataWindowWidget(QWidget):
         layout.addLayout(grid)
         layout.addStretch()
 
+    def set_theme(self, theme):
+        self.theme = theme
+        t = theme
+        if getattr(t, "name", "dark") == "light":
+            self.setStyleSheet(f"""
+                QWidget {{
+                    background-color: {t.bg};
+                    color: {t.text};
+                    font-family: 'Inter', sans-serif;
+                }}
+            """)
+            self.lbl_title.setStyleSheet("color: #667085; font-weight: bold; font-size: 11px; letter-spacing: 1px;")
+            self.lbl_time.setStyleSheet("color: #00897B; font-size: 13px; font-weight: bold;")
+        else:
+            self.setStyleSheet(f"""
+                QWidget {{
+                    background-color: {t.bg};
+                    color: {t.text};
+                    font-family: 'Inter', sans-serif;
+                }}
+            """)
+            self.lbl_title.setStyleSheet("color: #8A8A8A; font-weight: bold; font-size: 11px; letter-spacing: 1px;")
+            self.lbl_time.setStyleSheet("color: #00E676; font-size: 13px; font-weight: bold;")
+
     def update_bar(self, bar, tick_size: float):
         """Update inspector labels with metrics from the hovered Bar object."""
         try:
@@ -192,17 +216,52 @@ class CandleHoverPopup(QWidget):
     def update_bar(self, bar, tick_size: float, global_pos):
         """Update floating popup with metrics and move to cursor position."""
         try:
+            win = self.parent() or self.window()
+            t = getattr(win, "theme", None)
+            if t and getattr(t, "name", "dark") == "light":
+                self.setStyleSheet("""
+                    CandleHoverPopup {
+                        background-color: #FFFFFF;
+                        border: 1px solid #D0D5DD;
+                        border-radius: 6px;
+                        color: #12161F;
+                        font-family: 'Inter', sans-serif;
+                    }
+                    QLabel { font-size: 11px; }
+                """)
+                self.lbl_time.setStyleSheet("color: #667085; font-weight: bold; font-size: 10px; letter-spacing: 0.5px;")
+                self.lbl_ohlc.setStyleSheet("color: #12161F; font-weight: 500; font-family: monospace;")
+                self.lbl_vol_delta.setStyleSheet("color: #00897B; font-weight: 600; font-family: monospace;")
+                self.lbl_poc_imb.setStyleSheet("color: #475467; font-size: 10px;")
+                close_color = "#00897B" if bar.close >= bar.open else "#E53935"
+                d_color = "#00897B" if bar.delta >= 0 else "#E53935"
+            else:
+                self.setStyleSheet("""
+                    CandleHoverPopup {
+                        background-color: #1A1A1D;
+                        border: 1px solid #333336;
+                        border-radius: 6px;
+                        color: #E8E8E8;
+                        font-family: 'Inter', sans-serif;
+                    }
+                    QLabel { font-size: 11px; }
+                """)
+                self.lbl_time.setStyleSheet("color: #8A8A8A; font-weight: bold; font-size: 10px; letter-spacing: 0.5px;")
+                self.lbl_ohlc.setStyleSheet("color: #FFFFFF; font-weight: 500; font-family: monospace;")
+                self.lbl_vol_delta.setStyleSheet("color: #00E676; font-weight: 600; font-family: monospace;")
+                self.lbl_poc_imb.setStyleSheet("color: #AAAAAA; font-size: 10px;")
+                close_color = "#00E676" if bar.close >= bar.open else "#FF1744"
+                d_color = "#00E676" if bar.delta >= 0 else "#FF1744"
+
             dt_str = datetime.datetime.fromtimestamp(bar.start_ts).strftime("%H:%M:%S")
             self.lbl_time.setText(f"BAR INSPECTOR — {dt_str}")
 
-            close_color = "#00E676" if bar.close >= bar.open else "#FF1744"
             self.lbl_ohlc.setTextFormat(Qt.TextFormat.RichText)
             self.lbl_ohlc.setText(
                 f"O: {bar.open:,.2f}  H: {bar.high:,.2f}  L: {bar.low:,.2f}  "
                 f"<span style='color:{close_color}; font-weight:bold;'>C: {bar.close:,.2f}</span>"
             )
 
-            d_color = "#00E676" if bar.delta >= 0 else "#FF1744"
             d_prefix = "+" if bar.delta > 0 else ""
             pct = (bar.delta / bar.volume * 100.0) if bar.volume > 0 else 0.0
             

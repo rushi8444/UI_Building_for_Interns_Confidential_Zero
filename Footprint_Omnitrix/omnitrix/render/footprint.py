@@ -320,8 +320,15 @@ class FootprintItem(pg.GraphicsObject):
         
         p.save()
         p.resetTransform()
-        p.setBrush(QBrush(QColor(10, 17, 40, 235)))
-        p.setPen(pg.mkPen(QColor(30, 44, 79, 200), width=1))
+        if t.name == "light":
+            card_bg = QColor(245, 247, 250, 240)
+            card_border = QColor(200, 205, 215, 230)
+        else:
+            card_bg = QColor(10, 17, 40, 235)
+            card_border = QColor(30, 44, 79, 200)
+
+        p.setBrush(QBrush(card_bg))
+        p.setPen(pg.mkPen(card_border, width=1))
         p.drawRoundedRect(r, 4.0, 4.0)
 
         p.setFont(self.font)
