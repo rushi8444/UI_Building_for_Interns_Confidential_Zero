@@ -197,8 +197,9 @@ class FootprintItem(pg.GraphicsObject):
                                    t.poc_text if is_poc else t.cell_text, font=cell_font)
 
             elif mode == "Cluster":
+                d = buy_v - sell_v
                 bg = QColor(t.poc_bg) if is_poc else (
-                    t.ask_bg if bar.is_bull else t.bid_bg)
+                    QColor(t.bull) if d >= 0 else QColor(t.bear))
                 p.fillRect(QRectF(x - half, y, self.BOX_W, tick), bg)
                 if show_text:
                     self._cell_one(p, tr, x, y, tick, half, _fmt(tot),

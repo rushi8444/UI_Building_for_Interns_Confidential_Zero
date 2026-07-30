@@ -87,21 +87,31 @@ class SRTracker:
             _accumulate(score, held, seen, run)
 
         best_sup = best_res = None
-        for ti, sc in score.items():
-            if ti not in current or held[ti] < self.min_hold:
-                continue          # gone from the book, or no track record yet
-            lv = Level(ti, sc, current[ti], held[ti])
-            if ti < mid_ti:
-                if best_sup is None or sc > best_sup.score:
-                    best_sup = lv
-            elif ti > mid_ti:
-                if best_res is None or sc > best_res.score:
-                    best_res = lv
+        active_walls: list[Level] = []
+        if current:
+            mean_sz = sum(current.values()) / max(1, len(current))
+            thr = max(1000.0, mean_sz * 2.0)
+            for ti, sc in score.items():
+                if ti not in current or held[ti] < self.min_hold:
+                    continue
+                sz = current[ti]
+                lv = Level(ti, sc, sz, held[ti])
+                if sz >= thr:
+                    active_walls.append(lv)
+                if ti < mid_ti:
+                    if best_sup is None or sc > best_sup.score:
+                        best_sup = lv
+                elif ti > mid_ti:
+                    if best_res is None or sc > best_res.score:
+                        best_res = lv
+
+        active_walls.sort(key=lambda lv: lv.score, reverse=True)
+        self.walls = active_walls[:10]
 
         self.support = self._settle(self.support, best_sup, current, score, held)
         self.resistance = self._settle(self.resistance, best_res, current,
                                        score, held)
-        return self.support, self.resistance
+        return self.support, self.resistance, self.walls
 
     def _settle(self, holder: Level | None, best: Level | None,
                 current: dict, score: dict, held: dict) -> Level | None:

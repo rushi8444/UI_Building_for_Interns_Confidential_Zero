@@ -101,16 +101,40 @@ class BookmapBuffer:
         c = self._col(bk.ts_ms)
         to_index = self.instruments.to_index
         sym = self.symbol
-        book: dict[int, int] = {}
+
+        # Preserve and forward-fill existing depth levels from previous columns so the
+        # heatmap draws a continuous, full L2 depth field across price levels.
+        book: dict[int, int] = dict(c.book) if c.book else {}
+
         for price, size in bk.bids.items():
-            book[to_index(sym, price)] = size
+            ti = to_index(sym, price)
+            if size > 0:
+                book[ti] = size
+            else:
+                book.pop(ti, None)
         for price, size in bk.asks.items():
-            book[to_index(sym, price)] = size
-        c.book = book
+            ti = to_index(sym, price)
+            if size > 0:
+                book[ti] = size
+            else:
+                book.pop(ti, None)
+
         if bk.best_bid is not None:
             c.bid_ti = to_index(sym, bk.best_bid)
         if bk.best_ask is not None:
             c.ask_ti = to_index(sym, bk.best_ask)
+
+        mid_ti = None
+        if c.bid_ti is not None and c.ask_ti is not None:
+            mid_ti = (c.bid_ti + c.ask_ti) // 2
+        elif book:
+            mid_ti = sum(book.keys()) // len(book)
+
+        # Retain generous depth range (±250 ticks from mid-price)
+        if mid_ti is not None and len(book) > 350:
+            c.book = {ti: sz for ti, sz in book.items() if abs(ti - mid_ti) <= 250}
+        else:
+            c.book = book
 
     # ---- read access -----------------------------------------------------
     def columns(self) -> list[Column]:

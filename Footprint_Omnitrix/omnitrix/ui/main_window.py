@@ -98,29 +98,28 @@ class TradingViewBox(pg.ViewBox):
             pos_scene = QPointF(0, 0)
 
         pos = self.mapSceneToView(pos_scene)
-        
-        modifiers = ev.modifiers() if hasattr(ev, 'modifiers') else Qt.KeyboardModifier.NoModifier
-        is_ctrl_or_shift = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
-        
-        if is_ctrl_or_shift or axis == 1:
-            # Zoom Y-axis (price scale) -> Disables Auto-Fit
-            if self.main_window:
-                self.main_window._toggle_autofit(False)
-            self.scaleBy((1.0, s), center=(pos.x(), pos.y()))
-        else:
-            # Zoom X-axis (time scale) centered at mouse cursor
-            vr = self.viewRect()
-            new_w = vr.width() * s
-            if s < 1.0 and new_w < 3.0:  # Minimum 3 bars visible
-                return
-            
-            self.scaleBy((s, 1.0), center=(pos.x(), pos.y()))
-            if self.main_window and getattr(self.main_window, '_auto_fit_enabled', True):
-                self.main_window._auto_fit_y()
 
-        # Notify main window that the user manually changed the view
-        # so auto_scroll can be updated (prevents _redraw from overwriting zoom)
+        # BOOKMAP-STYLE ZOOM: Zoom both X and Y simultaneously around cursor
+        if self.main_window:
+            self.main_window._toggle_autofit(False)
+        self.scaleBy((s, s), center=(pos.x(), pos.y()))
         self.sigRangeChangedManually.emit(self.state['mouseMode'])
+
+        # --- COMMENTED OUT MAIN WINDOW TRADINGVIEW ZOOM LOGIC ---
+        # modifiers = ev.modifiers() if hasattr(ev, 'modifiers') else Qt.KeyboardModifier.NoModifier
+        # is_ctrl_or_shift = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
+        # if is_ctrl_or_shift or axis == 1:
+        #     if self.main_window:
+        #         self.main_window._toggle_autofit(False)
+        #     self.scaleBy((1.0, s), center=(pos.x(), pos.y()))
+        # else:
+        #     vr = self.viewRect()
+        #     new_w = vr.width() * s
+        #     if s < 1.0 and new_w < 3.0:
+        #         return
+        #     self.scaleBy((s, 1.0), center=(pos.x(), pos.y()))
+        #     if self.main_window and getattr(self.main_window, '_auto_fit_enabled', True):
+        #         self.main_window._auto_fit_y()
 
     def mouseDragEvent(self, ev, axis=None):
         if ev.isStart():

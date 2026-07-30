@@ -21,36 +21,25 @@ from PyQt6.QtGui import (QColor, QPainter, QFont, QPen, QBrush, QRadialGradient,
 # Trades read as pale-steel (buy) vs red (sell) spheres: a saturated blue buy
 # competes with the blue liquidity field behind it, while pale steel floats
 # clear of it at every heat level.
-BUY_BUBBLE = QColor(210, 226, 244)     # pale steel
-SELL_BUBBLE = QColor(230, 66, 82)      # red
-BID_LINE = QColor(126, 178, 250)
-ASK_LINE = QColor(246, 104, 118)
+BUY_BUBBLE = QColor(0, 230, 118)      # emerald green (buys)
+SELL_BUBBLE = QColor(255, 42, 42)     # bright red (sells)
+BID_LINE = QColor(0, 212, 255)        # electric cyan
+ASK_LINE = QColor(255, 145, 0)        # amber/orange
 
-# Background == the ramp's zero stop, so the field is seamless: where our book
-# ends (we see ~20-40 venue levels, not the full ladder) the pane continues as
-# the same deep blue instead of cutting to a black hole.
-#
-# The value is a compromise between two failure modes seen in practice: a
-# mid-blue floor swallows the bottom third of the ramp, so an ordinary book
-# contributes nothing and only walls show; a near-black floor gives the ramp
-# full range but leaves the uncovered price area reading as a void rather than
-# part of the chart. This sits dark enough to keep the ramp's headroom while
-# still being unmistakably blue.
-BOOKMAP_BG = "#131313"
+BOOKMAP_BG = "#0A1128"
 
 
 def _build_bookmap_lut() -> list[QColor]:
-    # Weighted dark: on a log scale the everyday book lands near the middle of
-    # the ramp. By keeping the lowest value slightly above the background color
-    # we ensure thin liquidity creates a visible gradient tail across the chart.
+    # Authentic Bookmap multi-stop color ramp: dark background -> cyan -> yellow -> orange -> red -> white core
     stops = [
-        (0.00, (19, 19, 19)),      # distinct from bg (no liquidity/thin tail)
-        (0.26, (26, 75, 122)),     # thin book
-        (0.50, (38, 128, 194)),    # ordinary resting size
-        (0.70, (82, 172, 222)),    # building
-        (0.84, (232, 240, 247)),   # white - heavy
-        (0.92, (255, 214, 64)),    # amber - hot spot
-        (1.00, (230, 51, 41)),     # red - wall
+        (0.00, (10, 17, 40)),      # #0A1128 Dark background navy
+        (0.15, (14, 37, 69)),      # dark navy blue texture
+        (0.35, (0, 102, 153)),     # ocean blue depth
+        (0.52, (0, 163, 224)),     # cyan / low liquidity
+        (0.70, (255, 255, 0)),     # vivid yellow / medium liquidity
+        (0.85, (255, 102, 0)),     # bright orange / high liquidity
+        (0.95, (230, 0, 0)),       # hot red / liquidity walls
+        (1.00, (255, 255, 255)),   # pure white core for massive walls
     ]
     lut: list[QColor] = []
     for i in range(256):
@@ -191,14 +180,26 @@ class BookHeatmapItem(_BufItem):
         if ncols <= 0:
             return
 
-        vmax = 1
+        # Dynamic percentile min-max logarithmic scale over non-zero depth cells:
+        # percentile [20, 88] provides clear contrast without oversaturation
+        all_vs = []
         for c in vis:
-            m = max(c.book.values())
-            if m > vmax:
-                vmax = m
-        # Logarithmic scale (as real Bookmap): ordinary resting size reads as
-        # quiet navy texture while walls saturate to white/amber/red.
-        denom = math.log1p(vmax) or 1.0
+            if c.book:
+                all_vs.extend([v for v in c.book.values() if v > 0])
+
+        if all_vs:
+            logs = np.log1p(all_vs)
+            positive_logs = logs[logs > 0]
+            if len(positive_logs) > 10:
+                p_low, p_high = np.percentile(positive_logs, [20, 88])
+            elif len(positive_logs) > 0:
+                p_low, p_high = positive_logs.min(), positive_logs.max()
+            else:
+                p_low, p_high = 0.0, 1.0
+            span = max(0.5, float(p_high - p_low)) 
+            p_low = float(p_low)
+        else:
+            p_low, span = 0.0, 1.0
 
         buf = np.zeros((nrows, ncols), dtype=np.uint32)   # 0 = transparent
         for c in vis:
@@ -211,8 +212,8 @@ class BookHeatmapItem(_BufItem):
             m = (ks >= 0) & (ks < nrows) & (vs > 0)
             if not m.any():
                 continue
-            idx = (np.log1p(vs[m]) / denom * 255.0).astype(np.int32)
-            np.clip(idx, 0, 255, out=idx)
+            norm_v = np.clip((np.log1p(vs[m]) - p_low) / span, 0.0, 1.0)
+            idx = (norm_v * 255.0).astype(np.int32)
             buf[ks[m], c.bucket - b0] = _LUT_ARGB[idx]
 
         self._buf = buf                    # QImage does not own the buffer
@@ -221,9 +222,9 @@ class BookHeatmapItem(_BufItem):
         if self.alpha < 255:
             p.setOpacity(self.alpha / 255.0)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
-        # Row 0 maps to the rect's top edge, i.e. the *lowest* price, which is
-        # the order the rows were filled in (ti - ti_lo).
+        # Smooth bilinear anti-aliasing transform for continuous terrain rendering
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        # Row 0 maps to the rect's top edge, i.e. the *lowest* price
         p.drawImage(QRectF(b0, ti_lo * tick - tick / 2, ncols, nrows * tick), img)
         if self.alpha < 255:
             p.setOpacity(1.0)
@@ -316,54 +317,48 @@ class BubbleItem(_BufItem):
         if not cells:
             return
 
-        agg = [(xb / cb, ti, b + s, b >= s) for (xb, ti), (b, s) in cells.items()
+        agg = [(xb / cb, ti, b, s, b + s) for (xb, ti), (b, s) in cells.items()
                if (b + s) >= self.min_size]
         if not agg:
             return
 
         # draw largest last so big prints sit on top
-        agg.sort(key=lambda t: t[2])
+        agg.sort(key=lambda t: t[4])
         if len(agg) > self.max_bubbles:
-            # A dense tape yields well over a thousand clustered cells in view.
-            # Drawing them all is both the frame-time cost and the wall of tiny
-            # circles that buries the prints worth seeing - so keep the largest
-            # and drop the tail. The size scale is taken from what survives, so
-            # the ones that remain still read relative to each other.
             agg = agg[-self.max_bubbles:]
-        smax = agg[-1][2] or 1
+        smax = agg[-1][4] or 1
 
         tr = p.transform()
         p.resetTransform()
-        for xd, ti, total, is_buy in agg:
+        for xd, ti, buy_v, sell_v, total in agg:
             pt = tr.map(QPointF(xd, ti * tick))
             r = self.min_r + (self.max_r - self.min_r) * math.sqrt(total / smax)
-            base = BUY_BUBBLE if is_buy else SELL_BUBBLE
-            self._sphere(p, pt, r, base)
+            buy_pct = buy_v / total if total > 0 else 0.5
+            self._pie_bubble(p, pt, r, buy_pct)
 
     @staticmethod
-    def _sphere(p: QPainter, pt: QPointF, r: float, base: QColor) -> None:
-        if r < 2.5:
-            # Below a few pixels the gradient is not resolvable - a flat fill is
-            # indistinguishable and skips building a gradient per bubble.
-            p.setBrush(QBrush(base))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(pt, r, r)
-            return
-        # glossy 3D sphere: bright top-left highlight -> base -> dark rim
-        grad = QRadialGradient(pt.x() - r * 0.35, pt.y() - r * 0.4, r * 1.5)
-        hi = base.lighter(165)
-        grad.setColorAt(0.0, QColor(min(255, hi.red()), min(255, hi.green()),
-                                    min(255, hi.blue()), 255))
-        grad.setColorAt(0.45, QColor(base.red(), base.green(), base.blue(), 235))
-        dk = base.darker(175)
-        grad.setColorAt(1.0, QColor(dk.red(), dk.green(), dk.blue(), 225))
-        p.setBrush(QBrush(grad))
-        p.setPen(QPen(QColor(dk.red(), dk.green(), dk.blue(), 235), 0.6))
+    def _pie_bubble(p: QPainter, pt: QPointF, r: float, buy_pct: float) -> None:
+        rect = QRectF(pt.x() - r, pt.y() - r, 2 * r, 2 * r)
+        buy_span = int(round(360 * 16 * buy_pct))
+        sell_span = 360 * 16 - buy_span
+
+        # Green buy wedge (from 12 o'clock CCW)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(BUY_BUBBLE))
+        p.drawPie(rect, 90 * 16, buy_span)
+
+        # Red sell wedge
+        p.setBrush(QBrush(SELL_BUBBLE))
+        p.drawPie(rect, 90 * 16 + buy_span, sell_span)
+
+        # Crisp 1px #111111 stroke around full circle
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(17, 17, 17, 240), 1.0))
         p.drawEllipse(pt, r, r)
 
 
-PIE_BUY = QColor(198, 216, 238)     # pale steel (aggressive buys)
-PIE_SELL = QColor(230, 66, 82)      # red (aggressive sells)
+PIE_BUY = QColor(0, 230, 118)       # vivid emerald green (aggressive buys)
+PIE_SELL = QColor(255, 42, 42)      # bright red (aggressive sells)
 SUPPORT_GREEN = QColor(40, 210, 122)
 RESIST_RED = QColor(244, 74, 86)
 # Darker, heavier tones for the absolute S/R levels: these are structural marks
@@ -396,6 +391,8 @@ class SRLinesItem(pg.GraphicsObject):
         self.tick = tick
         self.support = None
         self.resistance = None
+        self.walls = []
+        self.mid_ti = None
         self.x0 = 0.0
         self.x1 = 1.0
         self.zone_ticks = 1.6          # half-height of the shaded zone
@@ -403,11 +400,14 @@ class SRLinesItem(pg.GraphicsObject):
         self._bounds = QRectF()
         self.setZValue(-12)            # above the heatmap, below trades
 
-    def set_levels(self, support, resistance, x0: float, x1: float) -> None:
+    def set_levels(self, support, resistance, x0: float, x1: float, walls: list = None, mid_ti: float = None) -> None:
         self.prepareGeometryChange()
         self.support, self.resistance = support, resistance
+        self.walls = walls or []
+        self.mid_ti = mid_ti
         self.x0, self.x1 = x0, x1
-        tis = [lv.ti for lv in (support, resistance) if lv is not None]
+        all_lvs = [lv for lv in (support, resistance) if lv is not None] + self.walls
+        tis = [lv.ti for lv in all_lvs if hasattr(lv, 'ti')]
         if tis and x1 > x0:
             lo = (min(tis) - self.zone_ticks - 1) * self.tick
             hi = (max(tis) + self.zone_ticks + 1) * self.tick
@@ -420,7 +420,19 @@ class SRLinesItem(pg.GraphicsObject):
         return self._bounds
 
     def paint(self, p: QPainter, *args) -> None:
-        if self.support is None and self.resistance is None:
+        all_lvs = []
+        seen_tis = set()
+        if self.walls:
+            for lv in self.walls:
+                if lv.ti not in seen_tis:
+                    seen_tis.add(lv.ti)
+                    all_lvs.append(lv)
+        for lv in (self.support, self.resistance):
+            if lv is not None and lv.ti not in seen_tis:
+                seen_tis.add(lv.ti)
+                all_lvs.append(lv)
+
+        if not all_lvs:
             return
         tick = self.tick
         x0, x1 = self.x0, self.x1
@@ -429,30 +441,32 @@ class SRLinesItem(pg.GraphicsObject):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         tr = p.transform()
 
-        for lv, color, tag in ((self.support, SR_SUPPORT, "SUPPORT"),
-                               (self.resistance, SR_RESIST, "RESIST")):
-            if lv is None:
-                continue
+        mid = self.mid_ti
+        for lv in all_lvs:
             y = lv.ti * tick
             zone = self.zone_ticks * tick
-            # The level almost always sits on the heaviest wall, which the
-            # heatmap paints white/amber - so the zone needs enough opacity to
-            # tint it green/red rather than letting it read as just a bright
-            # band with a coloured edge.
-            p.fillRect(QRectF(x0, y - zone, x1 - x0, 2 * zone),
-                       QColor(color.red(), color.green(), color.blue(), 135))
-            p.setPen(pg.mkPen(color, width=4))
+            if mid is not None and lv.ti < mid:
+                color = QColor(0, 230, 118)    # Bid support wall (emerald green)
+                tag = "S"
+            elif mid is not None and lv.ti > mid:
+                color = QColor(255, 42, 42)    # Ask resistance wall (red)
+                tag = "R"
+            else:
+                color = QColor(235, 240, 245)  # Key liquidity node (white/light)
+                tag = "W"
+
+            p.setPen(pg.mkPen(color, width=2))
             p.drawLine(QPointF(x0, y), QPointF(x1, y))
 
             pt = tr.map(QPointF(x1, y))
-            label = f"{tag} {_bmfmt(lv.size)} · {lv.held}"
+            label = f"{tag} {_bmfmt(lv.size)}"
             p.save(); p.resetTransform()
             p.setFont(self.font)
             fm = p.fontMetrics()
-            w = fm.horizontalAdvance(label) + 10
-            box = QRectF(pt.x() - w - 6, pt.y() - 9, w, 18)
-            p.fillRect(box, QColor(color.red(), color.green(), color.blue(), 235))
-            p.setPen(pg.mkPen("#F2F6FA"))
+            w = fm.horizontalAdvance(label) + 8
+            box = QRectF(pt.x() - w - 4, pt.y() - 8, w, 16)
+            p.fillRect(box, QColor(color.red(), color.green(), color.blue(), 215))
+            p.setPen(pg.mkPen("#06131E"))
             p.drawText(box, Qt.AlignmentFlag.AlignCenter, label)
             p.restore()
 
@@ -522,14 +536,6 @@ class ProjectionItem(pg.GraphicsObject):
         sup_sz = book.get(sup_ti, 0) if sup_ti is not None else 0
         res_sz = book.get(res_ti, 0) if res_ti is not None else 0
 
-        denom = math.log1p(self.vmax)
-        for ti, size in book.items():
-            v = math.log1p(size) / denom
-            idx = 255 if v >= 1 else int(v * 255)
-            c = _LUT[idx]
-            p.fillRect(QRectF(x0, ti * tick - tick / 2, w, tick),
-                       QColor(c.red(), c.green(), c.blue(), 235))
-
         # absolute support (green) / resistance (red) — fat bright bands + label
         tr = p.transform()
         for ti, size, color, tag in ((sup_ti, sup_sz, SUPPORT_GREEN, "S"),
@@ -552,8 +558,8 @@ class PieItem(_BufItem):
     def __init__(self, tick: float):
         super().__init__(tick)
         self.min_size = 0
-        self.min_r = 7.0
-        self.max_r = 30.0
+        self.min_r = 10.0
+        self.max_r = 45.0
         self.setZValue(0)
 
     def paint(self, p: QPainter, *args) -> None:
@@ -591,8 +597,8 @@ class PieItem(_BufItem):
         # to avoid. Cap the radius at just under half a column's on-screen width
         # so the row stays a clean sequence at any zoom level.
         colw = abs(tr.map(QPointF(1.0, 0.0)).x() - tr.map(QPointF(0.0, 0.0)).x())
-        rmax = max(1.5, min(self.max_r, colw * 0.46))
-        rmin = min(self.min_r, rmax)
+        rmax = max(8.0, min(self.max_r, colw * 0.85))
+        rmin = max(5.0, min(self.min_r, rmax))
 
         p.resetTransform()
         for x, vti, tb, ts, tot in data:
@@ -699,27 +705,33 @@ class DomLadderItem(pg.GraphicsObject):
         if col is None or not col.book:
             return
         tick = self.tick
-        mx = self.vmax
+        mx = max(1, self.vmax)
         ask_ti = col.ask_ti if col.ask_ti is not None else 10 ** 12
         tr = p.transform()
 
-        # Bars are anchored at the right edge and grow *left*, so every level's
-        # magnitude is read against the price axis it belongs to - the same way
-        # a real DOM ladder is laid out. Solid (alpha 230) rather than washed
-        # out, so the ladder holds its own next to the heatmap.
+        BID_BAR_COLOR = QColor(0, 163, 224, 225)     # #00A3E0 cyan-blue for bids
+        ASK_BAR_COLOR = QColor(229, 57, 53, 225)     # #E53935 red for asks
+
+        col_width_px = abs(tr.map(QPointF(mx, 0.0)).x() - tr.map(QPointF(0.0, 0.0)).x()) or 100.0
+        min_px = 3.0
+        min_data_w = (min_px / col_width_px) * mx if col_width_px > 0 else mx * 0.04
+
+        
+        # Proportional bar length for EVERY row in view: power scaling (0.50) + 4% width floor
+        # guarantees small sizes (80-130) display a visible cyan (#00A3E0) or red (#E53935) bar.
         for ti, size in col.book.items():
-            color = ASK_LINE if ti >= ask_ti else BID_LINE
-            c = QColor(color.red(), color.green(), color.blue(), 230)
-            p.fillRect(QRectF(mx - size, ti * tick - tick / 2, size, tick), c)
+            if size <= 0:
+                continue
+            is_ask = ti >= ask_ti
+            c = ASK_BAR_COLOR if is_ask else BID_BAR_COLOR
+            frac = (size / mx) ** 0.50
+            bar_w = max(min_data_w, frac * mx)
+            p.fillRect(QRectF(mx - bar_w, ti * tick - tick / 2, bar_w, tick), c)
 
         p.setFont(self.font)
-        # Light text: it sits over the bar on wide levels and over the dark
-        # background on thin ones, and stays readable on both.
         p.setPen(pg.mkPen("#EAEEF5"))
         drawn_y: list[float] = []
         min_spacing = 14.0
-        # Sort levels by liquidity size descending so that significant walls
-        # (peaks) get priority for text labels in tight screen-space.
         for ti, size in sorted(col.book.items(), key=lambda kv: kv[1], reverse=True):
             rp = tr.map(QPointF(mx, ti * tick))
             sy = rp.y()
@@ -729,12 +741,12 @@ class DomLadderItem(pg.GraphicsObject):
             p.save(); p.resetTransform()
             p.drawText(QRectF(rp.x() - 62, sy - 7, 58, 14),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                       str(size))
+                       _bmfmt(size))
             p.restore()
 
 
 class VolumeBarsItem(_BufItem):
-    """Bottom per-column executed-volume bars, coloured by net delta, numbered."""
+    """Bottom per-column executed-volume bars, coloured by net delta, formatted."""
 
     def __init__(self, tick: float):
         super().__init__(tick)
@@ -756,17 +768,22 @@ class VolumeBarsItem(_BufItem):
             return
         x_lo, x_hi = self._xrange()
         tr = p.transform()
+        colw = abs(tr.map(QPointF(1.0, 0.0)).x() - tr.map(QPointF(0.0, 0.0)).x())
+        show_labels = colw >= 20.0  # skip label overlay when columns are densely packed to avoid overlap
+
         for c in self.cols:
             if not (x_lo <= c.bucket <= x_hi) or c.vol == 0:
                 continue
-            net = sum(c.buy.values()) - sum(c.sell.values())
-            color = BID_LINE if net >= 0 else ASK_LINE
+            buy_vol = sum(c.buy.values())
+            sell_vol = sum(c.sell.values())
+            color = BUY_BUBBLE if buy_vol >= sell_vol else SELL_BUBBLE
             p.fillRect(QRectF(c.bucket + 0.28, 0, 0.44, c.vol),
                        QColor(color.red(), color.green(), color.blue(), 225))
-            rp = tr.map(QPointF(c.bucket + 0.5, c.vol))
-            p.save(); p.resetTransform()
-            p.setFont(self.font)
-            p.setPen(pg.mkPen("#AEB4C0"))
-            p.drawText(QRectF(rp.x() - 14, rp.y() - 14, 28, 12),
-                       Qt.AlignmentFlag.AlignCenter, str(c.vol))
-            p.restore()
+            if show_labels:
+                rp = tr.map(QPointF(c.bucket + 0.5, c.vol))
+                p.save(); p.resetTransform()
+                p.setFont(self.font)
+                p.setPen(pg.mkPen("#AEB4C0"))
+                p.drawText(QRectF(rp.x() - 16, rp.y() - 14, 32, 12),
+                           Qt.AlignmentFlag.AlignCenter, _bmfmt(c.vol))
+                p.restore()

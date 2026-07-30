@@ -18,12 +18,14 @@ from PyQt6.QtGui import QColor, QPainter
 
 def _build_lut() -> list[QColor]:
     stops = [
-        (0.00, (8, 18, 34)),
-        (0.28, (16, 52, 100)),
-        (0.52, (32, 120, 190)),
-        (0.70, (235, 240, 245)),
-        (0.84, (255, 190, 60)),
-        (1.00, (255, 60, 55)),
+        (0.00, (10, 17, 40)),      # #0A1128 Dark background navy
+        (0.15, (14, 37, 69)),      # dark navy blue texture
+        (0.35, (0, 102, 153)),     # ocean blue depth
+        (0.52, (0, 163, 224)),     # cyan / low liquidity
+        (0.70, (255, 255, 0)),     # vivid yellow / medium liquidity
+        (0.85, (255, 102, 0)),     # bright orange / high liquidity
+        (0.95, (230, 0, 0)),       # hot red / liquidity walls
+        (1.00, (255, 255, 255)),   # pure white core for massive walls
     ]
     lut: list[QColor] = []
     for i in range(256):
@@ -50,7 +52,6 @@ class HeatmapItem(pg.GraphicsObject):
         self.bars: list = []
         self.tick = tick
         self.alpha = 235
-        self.gamma = 0.55          # <1 lifts mid-liquidity so the field reads
         self._bounds = QRectF()
         self.setZValue(-10)        # behind the footprint
 
@@ -81,22 +82,36 @@ class HeatmapItem(pg.GraphicsObject):
         x_lo = max(0, int(xr[0]) - 1)
         x_hi = min(len(self.bars), int(xr[1]) + 2)
 
-        # normalise over what's visible
-        vmax = 1
+        # Percentile-based logarithmic min-max scale over visible bars
+        all_vs = []
         for x in range(x_lo, x_hi):
             bk = self.bars[x].book
             if bk:
-                m = max(bk.values())
-                if m > vmax:
-                    vmax = m
+                all_vs.extend([v for v in bk.values() if v > 0])
+
+        if all_vs:
+            logs = np.log1p(all_vs)
+            positive_logs = logs[logs > 0]
+            if len(positive_logs) > 10:
+                p_low, p_high = np.percentile(positive_logs, [20, 88])
+            elif len(positive_logs) > 0:
+                p_low, p_high = positive_logs.min(), positive_logs.max()
+            else:
+                p_low, p_high = 0.0, 1.0
+            span = max(0.5, float(p_high - p_low)) 
+            p_low = float(p_low)
+        else:
+            p_low, span = 0.0, 1.0
 
         for x in range(x_lo, x_hi):
             bk = self.bars[x].book
             if not bk:
                 continue
             for ti, size in bk.items():
-                v = (size / vmax) ** self.gamma
-                idx = 0 if v <= 0 else (255 if v >= 1 else int(v * 255))
+                if size <= 0:
+                    continue
+                v = np.clip((np.log1p(size) - p_low) / span, 0.0, 1.0)
+                idx = int(v * 255.0)
                 c = _LUT[idx]
                 c = QColor(c.red(), c.green(), c.blue(), self.alpha)
                 p.fillRect(QRectF(x - 0.5, ti * tick - tick / 2, 1.0, tick), c)

@@ -25,7 +25,7 @@ from ..render import (
 
 from ..render.bookmap import BOOKMAP_BG as BG
 # label -> aggregation factor over the 1s base columns
-TF = {"1s": 1, "2s": 2, "5s": 5, "10s": 10, "30s": 30, "1m": 60}
+TF = {"1s": 1, "2s": 2, "5s": 5, "10s": 10, "30s": 30, "1m": 60, "5m": 300, "10m": 600}
 
 
 def _fmt(v: int) -> str:
@@ -94,12 +94,13 @@ class BookmapWindow(QMainWindow):
         self.btn_follow.clicked.connect(self._reset_view)
         tb.addWidget(self.btn_follow)
 
-        self.btn_out = QPushButton("－")
-        self.btn_out.clicked.connect(lambda: self._zoom(1.25))
-        tb.addWidget(self.btn_out)
-        self.btn_in = QPushButton("＋")
-        self.btn_in.clicked.connect(lambda: self._zoom(0.8))
-        tb.addWidget(self.btn_in)
+        self.btn_sr = QPushButton("S/R Lines")
+        self.btn_sr.setCheckable(True)
+        self.btn_sr.setChecked(True)    # ON by default
+        self.btn_sr.clicked.connect(self._on_sr_toggle)
+        tb.addWidget(self.btn_sr)
+
+
 
         t = DARK
         self.setStyleSheet(
@@ -154,7 +155,7 @@ class BookmapWindow(QMainWindow):
         self.main = self.glw.addPlot(row=0, col=0)
         self.main.showAxis("right"); self.main.hideAxis("left")
         self.main.hideAxis("bottom")
-        self.main.showGrid(x=False, y=True, alpha=0.10)
+        self.main.showGrid(x=True, y=True, alpha=0.06)
         vb = self.main.getViewBox()
         vb.setMouseMode(pg.ViewBox.PanMode)          # left-drag pans
         vb.setMouseEnabled(x=True, y=True)
@@ -227,6 +228,7 @@ class BookmapWindow(QMainWindow):
         # drawn full width so price can be watched approaching them.
         self.sr = SRTracker()
         self.sr_item = SRLinesItem(self.tick)
+        self.sr_item.setVisible(True)    # visible by default
         self.main.addItem(self.sr_item)
 
         # ---- crosshair with live price / time / liquidity readout ----
@@ -332,10 +334,6 @@ class BookmapWindow(QMainWindow):
         self.btn_follow.setText("⏵ Follow")
         self.refresh()
 
-    def _zoom(self, factor: float):
-        self._follow = False
-        vb = self.main.getViewBox()
-        vb.scaleBy((factor, 1.0))            # zoom time axis about centre
 
     def _on_tf(self, txt: str):
         self.agg = TF.get(txt, 1)
@@ -362,6 +360,14 @@ class BookmapWindow(QMainWindow):
         self.pie.setVisible(txt == "Pie")
         self.bars.setVisible(txt == "Bars")
         self.refresh()
+
+    def _on_sr_toggle(self) -> None:
+        """Show or hide the full-width S/R level lines."""
+        enabled = self.btn_sr.isChecked()
+        self.sr_item.setVisible(enabled)
+        if not enabled:
+            # Clear stale lines immediately when toggled off
+            self.sr_item.set_levels([], [], 0, 0)
 
     # ---- data + view -----------------------------------------------------
     def refresh(self, initial: bool = False) -> None:
@@ -404,10 +410,12 @@ class BookmapWindow(QMainWindow):
 
         # Persistence-weighted S/R, shared by the projection bands and the
         # full-width lines so the two always name the same levels.
-        sup, res = self.sr.update(cols, mid_ti)
+        sup, res, walls = self.sr.update(cols, mid_ti)
         self.projection.set_sr(sup, res)
-        self.sr_item.set_levels(sup, res, cols[0].bucket,
-                                latest.bucket + self.proj_width + 1)
+        if self.btn_sr.isChecked():
+            self.sr_item.set_levels(sup, res, cols[0].bucket,
+                                    latest.bucket + self.proj_width + 1,
+                                    walls=walls, mid_ti=mid_ti)
 
         if book_col.book:
             # Exact, no margin: the ladder's bars are right-anchored at mx, so
@@ -449,7 +457,7 @@ class BookmapWindow(QMainWindow):
                     hi = ti if hi is None else max(hi, ti)
             if lo is None:
                 return
-        pad = max(16.0, (hi - lo) * 0.6) * self.tick
+        pad = max(35.0, (hi - lo) * 1.0) * self.tick
         y0, y1 = lo * self.tick - pad, hi * self.tick + pad
 
         # Hysteresis: re-fitting on every 80ms refresh made the chart micro-jitter
@@ -474,4 +482,14 @@ class TimeAxisSecs(pg.AxisItem):
     def tickStrings(self, values, scale, spacing):
         import time
         dt = (self.win.buffer.col_dt * self.win.agg) if self.win else 1.0
-        return [time.strftime("%H:%M:%S", time.localtime(v * dt)) for v in values]
+        res = []
+        for v in values:
+            try:
+                sec = float(v * dt)
+                if sec < 0:
+                    res.append("")
+                else:
+                    res.append(time.strftime("%H:%M:%S", time.localtime(sec)))
+            except Exception:
+                res.append("")
+        return res

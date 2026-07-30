@@ -153,24 +153,28 @@ class CellViewBox(pg.ViewBox):
             pos_scene = QPointF(0, 0)
 
         pos = self.mapSceneToView(pos_scene)
-        modifiers = ev.modifiers() if hasattr(ev, 'modifiers') else Qt.KeyboardModifier.NoModifier
-        is_ctrl_or_shift = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
 
-        if is_ctrl_or_shift or axis == 1:
-            if self.chart_cell:
-                self.chart_cell._toggle_autofit(False)
-            self.scaleBy((1.0, s), center=(pos.x(), pos.y()))
-        else:
-            vr = self.viewRect()
-            new_w = vr.width() * s
-            if s < 1.0 and new_w < 3.0:
-                return
-
-            self.scaleBy((s, 1.0), center=(pos.x(), pos.y()))
-            if self.chart_cell and self.chart_cell._auto_fit_enabled:
-                self.chart_cell._auto_fit_y()
-
+        # BOOKMAP-STYLE ZOOM: Zoom both X and Y simultaneously around cursor
+        if self.chart_cell:
+            self.chart_cell._toggle_autofit(False)
+        self.scaleBy((s, s), center=(pos.x(), pos.y()))
         self.sigRangeChangedManually.emit(self.state['mouseMode'])
+
+        # --- COMMENTED OUT MAIN WINDOW TRADINGVIEW ZOOM LOGIC ---
+        # modifiers = ev.modifiers() if hasattr(ev, 'modifiers') else Qt.KeyboardModifier.NoModifier
+        # is_ctrl_or_shift = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
+        # if is_ctrl_or_shift or axis == 1:
+        #     if self.chart_cell:
+        #         self.chart_cell._toggle_autofit(False)
+        #     self.scaleBy((1.0, s), center=(pos.x(), pos.y()))
+        # else:
+        #     vr = self.viewRect()
+        #     new_w = vr.width() * s
+        #     if s < 1.0 and new_w < 3.0:
+        #         return
+        #     self.scaleBy((s, 1.0), center=(pos.x(), pos.y()))
+        #     if self.chart_cell and self.chart_cell._auto_fit_enabled:
+        #         self.chart_cell._auto_fit_y()
 
     def mouseDragEvent(self, ev, axis=None):
         if ev.isStart():
