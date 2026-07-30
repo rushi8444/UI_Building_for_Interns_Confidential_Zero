@@ -6,7 +6,7 @@ from .heatmap import HeatmapItem
 from .axis import TimeAxis
 from .bookmap import (
     BookHeatmapItem, BBOItem, BubbleItem, PieItem, BarsItem, ProjectionItem,
-    DomLadderItem, VolumeBarsItem, SRLinesItem,
+    DomLadderItem, VolumeBarsItem, SRLinesItem, IcebergItem,
 )
 from .profile import TPOItem, VolumeProfileItem
 from .drawings import FibRetracement, PositionDrawer, FixedVolumeProfile, RangeCPR
@@ -15,7 +15,7 @@ from .indicators import EMAItem, CPRItem
 __all__ = [
     "Theme", "DARK", "LIGHT", "FootprintItem", "HeatmapItem", "TimeAxis",
     "BookHeatmapItem", "BBOItem", "BubbleItem", "PieItem", "BarsItem",
-    "ProjectionItem", "DomLadderItem", "VolumeBarsItem", "SRLinesItem",
+    "ProjectionItem", "DomLadderItem", "VolumeBarsItem", "SRLinesItem", "IcebergItem",
     "TPOItem", "VolumeProfileItem",
     "FibRetracement", "PositionDrawer", "FixedVolumeProfile", "RangeCPR",
     "EMAItem", "CPRItem"

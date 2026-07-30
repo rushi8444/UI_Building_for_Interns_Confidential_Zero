@@ -15,12 +15,16 @@ import time
 
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QMainWindow, QToolBar, QLabel, QComboBox, QPushButton
+from PyQt6.QtWidgets import (
+    QMainWindow, QToolBar, QLabel, QComboBox, QPushButton, QWidget,
+    QVBoxLayout, QTabBar, QStatusBar,
+)
+from PyQt6.QtGui import QPainter, QColor, QFont, QBrush, QLinearGradient
 
 from ..engine import BookmapBuffer, SRTracker
 from ..render import (
     BookHeatmapItem, BBOItem, BubbleItem, PieItem, BarsItem, ProjectionItem,
-    DomLadderItem, VolumeBarsItem, SRLinesItem, DARK,
+    DomLadderItem, VolumeBarsItem, SRLinesItem, DARK, Theme,
 )
 
 from ..render.bookmap import BOOKMAP_BG as BG
@@ -34,6 +38,43 @@ def _fmt(v: int) -> str:
     if v >= 1000:
         return f"{v / 1000:.0f}K"
     return str(v)
+
+
+class HeatmapLegendWidget(QWidget):
+    """Legend heat gradient bar (0 to 35K+) matching main.py demo styling."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(160, 22)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        rect = self.rect()
+        w, h = 110, 12
+        x, y = 4, 5
+
+        grad = QLinearGradient(x, 0, x + w, 0)
+        stops = [
+            (0.00, QColor(8, 14, 26)),
+            (0.15, QColor(10, 32, 58)),
+            (0.32, QColor(13, 58, 99)),
+            (0.48, QColor(17, 92, 150)),
+            (0.62, QColor(25, 140, 180)),
+            (0.74, QColor(60, 190, 150)),
+            (0.82, QColor(245, 230, 66)),
+            (0.90, QColor(242, 140, 30)),
+            (1.00, QColor(232, 64, 42)),
+        ]
+        for pos, col in stops:
+            grad.setColorAt(pos, col)
+
+        p.fillRect(x, y, w, h, QBrush(grad))
+        p.setPen(QColor(35, 44, 53))
+        p.drawRect(x, y, w, h)
+
+        p.setPen(QColor(140, 150, 160))
+        p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        p.drawText(x + w + 6, y + 10, "35K")
 
 
 class BookmapWindow(QMainWindow):
@@ -50,13 +91,14 @@ class BookmapWindow(QMainWindow):
         pg.setConfigOptions(useOpenGL=False, antialias=False)
         self._build_toolbar()
         self._build_plots()
+        self._build_statusbar()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
         self._timer.start(80)                 # ~12.5 fps data refresh
         self.refresh(initial=True)
 
-    # ---- toolbar ---------------------------------------------------------
+    # ---- toolbar & tabs --------------------------------------------------
     def _build_toolbar(self) -> None:
         tb = QToolBar()
         tb.setMovable(False)
@@ -76,9 +118,6 @@ class BookmapWindow(QMainWindow):
         tb.addWidget(QLabel("   Min trade "))
         self.min_combo = QComboBox()
         self.min_combo.addItems(["All", "100", "250", "500", "1K", "2.5K", "5K", "10K"])
-        # 500 was tuned against the dense synthetic tape; on a live feed quieter
-        # symbols fall under it and their pies blink on/off as volume crosses
-        # the threshold. 100 keeps the clustering benefit without that.
         self.min_combo.setCurrentText("100")
         self.min_combo.currentTextChanged.connect(self._on_minsize)
         tb.addWidget(self.min_combo)
@@ -100,9 +139,23 @@ class BookmapWindow(QMainWindow):
         self.btn_sr.clicked.connect(self._on_sr_toggle)
         tb.addWidget(self.btn_sr)
 
-
+        tb.addWidget(QLabel("   Heat "))
+        tb.addWidget(HeatmapLegendWidget(self))
 
         self.set_theme(DARK)
+
+    def _build_statusbar(self) -> None:
+        sb = QStatusBar()
+        self.setStatusBar(sb)
+        lbl_powered = QLabel("  Powered by Omnitrix Engine")
+        lbl_powered.setStyleSheet("color: #5B6870; font-size: 11px; font-weight: 500; font-family: 'Inter', sans-serif;")
+        lbl_live = QLabel("Data: Live")
+        lbl_live.setStyleSheet("color: #5EC26A; font-size: 11px; font-weight: 600; font-family: 'Inter', sans-serif; margin-right: 14px;")
+        lbl_sim = QLabel("Trading: Simulated")
+        lbl_sim.setStyleSheet("color: #E0B84A; font-size: 11px; font-weight: 600; font-family: 'Inter', sans-serif; margin-right: 14px;")
+        sb.addPermanentWidget(lbl_powered, 1)
+        sb.addPermanentWidget(lbl_live)
+        sb.addPermanentWidget(lbl_sim)
 
     def set_theme(self, theme: Theme) -> None:
         self.theme = theme

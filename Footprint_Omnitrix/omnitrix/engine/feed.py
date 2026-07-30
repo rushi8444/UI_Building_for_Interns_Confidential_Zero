@@ -187,8 +187,8 @@ class SyntheticFeed(Feed):
         bids: dict[float, int] = {}
         asks: dict[float, int] = {}
         for lvl in range(1, self.depth_levels + 1):
-            base_b = max(80, int(rng.gauss(900, 350) / lvl))
-            base_a = max(80, int(rng.gauss(900, 350) / lvl))
+            base_b = max(120, int(4500.0 / (1.0 + 0.12 * lvl) + rng.gauss(800, 300)))
+            base_a = max(120, int(4500.0 / (1.0 + 0.12 * lvl) + rng.gauss(800, 300)))
             pb = self._snap(mid - lvl * self.tick)
             pa = self._snap(mid + lvl * self.tick)
             bids[pb] = base_b + walls.get(pb, 0)

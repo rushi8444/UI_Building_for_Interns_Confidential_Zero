@@ -30,15 +30,17 @@ BOOKMAP_BG = "#0A1128"
 
 
 def _build_bookmap_lut() -> list[QColor]:
-    # Dark-mode heatmap gradient: dark navy -> ocean blue -> cyan -> yellow -> orange -> hot crimson red
+    # 9-stop high-contrast Bookmap color ramp (navy -> blue -> cyan -> yellow -> orange -> red)
     stops = [
-        (0.00, (10, 17, 40)),      # #0A1128 Dark background navy
-        (0.18, (15, 38, 75)),      # dark navy blue texture
-        (0.38, (0, 102, 170)),     # ocean blue depth
-        (0.55, (0, 180, 216)),     # vibrant cyan / teal
-        (0.72, (255, 215, 0)),     # vivid yellow / golden medium liquidity
-        (0.88, (255, 110, 0)),     # bright orange / high liquidity
-        (1.00, (225, 25, 25)),     # hot crimson red for heavy limit order clusters (no white bands)
+        (0.00, (8, 14, 26)),       # Navy background
+        (0.15, (10, 32, 58)),      # Deep blue
+        (0.32, (13, 58, 99)),      # Ocean blue
+        (0.48, (17, 92, 150)),     # Slate teal
+        (0.62, (25, 140, 180)),    # Bright cyan/teal
+        (0.74, (60, 190, 150)),    # Mint green
+        (0.82, (245, 230, 66)),    # Electric yellow
+        (0.90, (242, 140, 30)),    # Saturated orange
+        (1.00, (232, 64, 42)),     # Crimson red limit wall
     ]
     lut: list[QColor] = []
     for i in range(256):
@@ -190,12 +192,12 @@ class BookHeatmapItem(_BufItem):
             logs = np.log1p(all_vs)
             positive_logs = logs[logs > 0]
             if len(positive_logs) > 10:
-                p_low, p_high = np.percentile(positive_logs, [20, 88])
+                p_low, p_high = np.percentile(positive_logs, [5, 96])
             elif len(positive_logs) > 0:
                 p_low, p_high = positive_logs.min(), positive_logs.max()
             else:
                 p_low, p_high = 0.0, 1.0
-            span = max(0.5, float(p_high - p_low)) 
+            span = max(0.8, float(p_high - p_low)) 
             p_low = float(p_low)
         else:
             p_low, span = 0.0, 1.0
@@ -350,8 +352,12 @@ class BubbleItem(_BufItem):
         p.setBrush(QBrush(SELL_BUBBLE))
         p.drawPie(rect, 90 * 16 + buy_span, sell_span)
 
-        # Crisp 1px #111111 stroke around full circle
+        # Crisp stroke and vibrant outer ring highlights matching main.py demo
         p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(140, 255, 170, 220), 1.2))
+        p.drawArc(rect, 90 * 16, buy_span)
+        p.setPen(QPen(QColor(255, 150, 140, 220), 1.2))
+        p.drawArc(rect, 90 * 16 + buy_span, sell_span)
         p.setPen(QPen(QColor(17, 17, 17, 240), 1.0))
         p.drawEllipse(pt, r, r)
 
@@ -771,7 +777,11 @@ class VolumeBarsItem(_BufItem):
         show_labels = colw >= 20.0  # skip label overlay when columns are densely packed to avoid overlap
 
         for c in self.cols:
-            if not (x_lo <= c.bucket <= x_hi) or c.vol == 0:
+            if not (x_lo <= c.bucket <= x_hi):
+                continue
+            if c.vol == 0:
+                # Render a subtle 2px baseline indicator for 0-volume seconds so the timeline stays continuous
+                p.fillRect(QRectF(c.bucket + 0.30, 0, 0.40, 2), QColor(90, 100, 115, 160))
                 continue
             buy_vol = sum(c.buy.values())
             sell_vol = sum(c.sell.values())
@@ -786,3 +796,63 @@ class VolumeBarsItem(_BufItem):
                 p.drawText(QRectF(rp.x() - 16, rp.y() - 14, 32, 12),
                            Qt.AlignmentFlag.AlignCenter, _bmfmt(c.vol))
                 p.restore()
+
+
+class IcebergItem(pg.GraphicsObject):
+    """Detects and renders Iceberg / Hidden Order markers (yellow diamonds).
+    Triggered when total executed trade volume at a price tier exceeds the resting limit book size by >= 2.5x."""
+
+    def __init__(self, tick: float):
+        super().__init__()
+        self.tick = tick
+        self.cols = []
+        self.ratio_threshold = 2.5     # trade volume >= 2.5x resting book size
+        self.min_iceberg_vol = 300      # min executed volume to flag an iceberg
+        self.font = QFont("Consolas", 8, QFont.Weight.Bold)
+        self._bounds = QRectF()
+        self.setZValue(10)             # top layer above bubbles
+
+    def set_cols(self, cols):
+        self.prepareGeometryChange()
+        self.cols = cols
+        if cols:
+            x0, x1 = cols[0].bucket, cols[-1].bucket
+            self._bounds = QRectF(x0 - 1, 0, (x1 - x0) + 3, 1000000)
+        else:
+            self._bounds = QRectF()
+        self.update()
+
+    def boundingRect(self) -> QRectF:
+        return self._bounds
+
+    def paint(self, p: QPainter, *args) -> None:
+        if not self.cols:
+            return
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        tick = self.tick
+        tr = p.transform()
+
+        ICEBERG_YELLOW = QColor(255, 220, 0, 240)
+        ICEBERG_BORDER = QColor(30, 30, 30, 240)
+
+        for c in self.cols[-60:]:
+            bk = c.book or {}
+            for ti in set(c.buy.keys()) | set(c.sell.keys()):
+                exec_vol = c.buy.get(ti, 0) + c.sell.get(ti, 0)
+                if exec_vol < self.min_iceberg_vol:
+                    continue
+                rest_sz = bk.get(ti, 100)
+                if exec_vol >= rest_sz * self.ratio_threshold:
+                    pt = tr.map(QPointF(c.bucket + 0.5, ti * tick))
+                    p.save(); p.resetTransform()
+                    r = 6.0
+                    polygon = [
+                        QPointF(pt.x(), pt.y() - r),
+                        QPointF(pt.x() + r, pt.y()),
+                        QPointF(pt.x(), pt.y() + r),
+                        QPointF(pt.x() - r, pt.y()),
+                    ]
+                    p.setBrush(QBrush(ICEBERG_YELLOW))
+                    p.setPen(QPen(ICEBERG_BORDER, 1.2))
+                    p.drawPolygon(polygon)
+                    p.restore()

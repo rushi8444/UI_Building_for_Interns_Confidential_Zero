@@ -90,9 +90,9 @@ class SRTracker:
         active_walls: list[Level] = []
         if current:
             mean_sz = sum(current.values()) / max(1, len(current))
-            thr = max(1000.0, mean_sz * 2.0)
+            thr = max(200.0, mean_sz * 1.5)
             for ti, sc in score.items():
-                if ti not in current or held[ti] < self.min_hold:
+                if ti not in current or held[ti] < max(1, self.min_hold):
                     continue
                 sz = current[ti]
                 lv = Level(ti, sc, sz, held[ti])
