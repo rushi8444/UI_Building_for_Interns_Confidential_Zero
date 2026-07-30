@@ -5,7 +5,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QDialog, QFormLayout, QDoubleSpinBox, QSpinBox, QCheckBox, QPushButton,
+    QDialog, QFormLayout, QDoubleSpinBox, QSpinBox, QPushButton,
     QColorDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget, QFrame,
 )
 
@@ -196,11 +196,7 @@ class SettingsDialog(QDialog):
         self.hm_gamma.setValue(win.heatmap.gamma)
         form.addRow("Heatmap gamma", self.hm_gamma)
 
-        self.chk_candles = QCheckBox(); self.chk_candles.setChecked(fp.show_candles)
-        form.addRow("Show candles", self.chk_candles)
 
-        self.chk_cvd_div = QCheckBox(); self.chk_cvd_div.setChecked(getattr(win, "show_cvd_div", False))
-        form.addRow("Show CVD Divergence", self.chk_cvd_div)
 
         # Colour pickers
         self.c_bull = _ColorButton(QColor(t.bull))
@@ -233,8 +229,7 @@ class SettingsDialog(QDialog):
             "va_pct": self.vapct.value() / 100.0,
             "hm_alpha": self.hm_alpha.value(),
             "hm_gamma": self.hm_gamma.value(),
-            "show_candles": self.chk_candles.isChecked(),
-            "show_cvd_div": self.chk_cvd_div.isChecked(),
+
             "bull": self.c_bull.color().name(),
             "bear": self.c_bear.color().name(),
             "buy_imb": self.c_buy.color(),

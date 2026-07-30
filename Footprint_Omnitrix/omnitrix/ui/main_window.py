@@ -830,11 +830,11 @@ class OmnitrixWindow(QMainWindow):
             min_imbalance_vol=v["min_imbalance_vol"],
             stacked_min=v["stacked_min"],
             va_pct=v["va_pct"],
-            show_candles=v["show_candles"],
+            show_candles=v.get("show_candles", True),
         )
         self.heatmap.alpha = v["hm_alpha"]
         self.heatmap.gamma = v["hm_gamma"]
-        self.show_cvd_div = v.get("show_cvd_div", True)
+        self.show_cvd_div = v.get("show_cvd_div", False)
         if hasattr(self, "chart_grid"):
             for cell in self.chart_grid.cells:
                 cell.show_cvd_div = self.show_cvd_div
@@ -850,6 +850,10 @@ class OmnitrixWindow(QMainWindow):
         self._apply_theme()
         self._dirty = True
 
+    # FootprintItem layout constants (must match render/footprint.py)
+    _FP_BOX_W = 0.66      # total block width in view x-units
+    _FP_CANDLE_GAP = 0.06  # gap between candle body and block left edge
+
     def _on_cell_mouse_move(self, cell, pos) -> None:
         if cell.price_plot and cell.price_plot.sceneBoundingRect().contains(pos):
             mp = cell.price_plot.vb.mapSceneToView(pos)
@@ -863,7 +867,23 @@ class OmnitrixWindow(QMainWindow):
                     tick_size = self.instruments.tick(sym)
                     y_price = mp.y()
                     margin = max(tick_size * 2.0, (bar.high - bar.low) * 0.1)
-                    if (bar.low - margin) <= y_price <= (bar.high + margin):
+
+                    # X-axis hit test: ONLY the candle body/wick area.
+                    # Candle center: cx = bar_idx - BOX_W/2 - CANDLE_GAP
+                    #                   = bar_idx - 0.33   - 0.06  = bar_idx - 0.39
+                    # Candle body:   cx ± 0.09  →  x_offset in [-0.48, -0.30]
+                    # We allow a ±0.12 tolerance around the candle center for
+                    # easier hover, giving x_offset in [-0.51, -0.27].
+                    # The footprint numbers block starts at bar_idx - 0.33, so
+                    # anything with x_offset > -0.27 is over the numbers — excluded.
+                    x_offset = mp.x() - bar_idx
+                    candle_cx_offset = -(self._FP_BOX_W / 2 + self._FP_CANDLE_GAP)  # -0.39
+                    hover_tol = 0.12   # tolerance around candle centre
+                    x_left_limit  = candle_cx_offset - hover_tol   # ≈ -0.51
+                    x_right_limit = candle_cx_offset + hover_tol   # ≈ -0.27
+
+                    if (x_left_limit <= x_offset <= x_right_limit
+                            and (bar.low - margin) <= y_price <= (bar.high + margin)):
                         global_pos = QCursor.pos()
                         self._pending_hover_data = (bar, tick_size, global_pos)
                         self._show_hover_popup()
