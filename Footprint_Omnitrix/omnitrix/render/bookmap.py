@@ -30,16 +30,15 @@ BOOKMAP_BG = "#0A1128"
 
 
 def _build_bookmap_lut() -> list[QColor]:
-    # Authentic Bookmap multi-stop color ramp: dark background -> cyan -> yellow -> orange -> red -> white core
+    # Dark-mode heatmap gradient: dark navy -> ocean blue -> cyan -> yellow -> orange -> hot crimson red
     stops = [
         (0.00, (10, 17, 40)),      # #0A1128 Dark background navy
-        (0.15, (14, 37, 69)),      # dark navy blue texture
-        (0.35, (0, 102, 153)),     # ocean blue depth
-        (0.52, (0, 163, 224)),     # cyan / low liquidity
-        (0.70, (255, 255, 0)),     # vivid yellow / medium liquidity
-        (0.85, (255, 102, 0)),     # bright orange / high liquidity
-        (0.95, (230, 0, 0)),       # hot red / liquidity walls
-        (1.00, (255, 255, 255)),   # pure white core for massive walls
+        (0.18, (15, 38, 75)),      # dark navy blue texture
+        (0.38, (0, 102, 170)),     # ocean blue depth
+        (0.55, (0, 180, 216)),     # vibrant cyan / teal
+        (0.72, (255, 215, 0)),     # vivid yellow / golden medium liquidity
+        (0.88, (255, 110, 0)),     # bright orange / high liquidity
+        (1.00, (225, 25, 25)),     # hot crimson red for heavy limit order clusters (no white bands)
     ]
     lut: list[QColor] = []
     for i in range(256):

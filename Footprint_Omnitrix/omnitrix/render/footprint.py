@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pyqtgraph as pg
 from PyQt6.QtCore import QRectF, QPointF, Qt
-from PyQt6.QtGui import QFont, QColor, QPainter
+from PyQt6.QtGui import QFont, QColor, QPainter, QBrush
 
 from .theme import Theme, DARK
 
@@ -37,6 +37,8 @@ class FootprintItem(pg.GraphicsObject):
         self.min_imbalance_vol = 20
         self.stacked_min = 3
         self.va_pct = 0.70
+        self.min_cluster_text_vol = 500   # Volume threshold for displaying cell text (500 shares / 0.5K)
+        self.min_delta_text_vol = 1000    # Threshold for displaying delta text (|Delta| >= 1.0K / 1000 shares)
         self.font = QFont("Consolas", 8, QFont.Weight.Bold)
         self._bounds = QRectF()
 
@@ -91,7 +93,8 @@ class FootprintItem(pg.GraphicsObject):
             return
         lo = min(b.low for b in self.bars)
         hi = max(b.high for b in self.bars)
-        self._bounds = QRectF(-1, lo - 1.0, len(self.bars) + 2, (hi - lo) + 2.0)
+        # Extra bottom padding margin so footer summary pills sit cleanly below lowest candle wicks
+        self._bounds = QRectF(-1, lo - (3.0 * self.tick), len(self.bars) + 2, (hi - lo) + (4.5 * self.tick))
 
     def boundingRect(self) -> QRectF:
         return self._bounds
@@ -137,15 +140,24 @@ class FootprintItem(pg.GraphicsObject):
 
     def _paint_candle(self, p, x, bar, color, half, tick) -> None:
         cx = x - half - self.CANDLE_GAP
-        p.setPen(pg.mkPen(color, width=2))
-        p.drawLine(QPointF(cx, bar.low), QPointF(cx, bar.high))
         top = max(bar.open, bar.close)
         bot = min(bar.open, bar.close)
         if top == bot:
             top += tick / 8
-        p.setPen(pg.mkPen(color, width=1))
-        p.setBrush(pg.mkBrush(color))
-        p.drawRect(QRectF(cx - 0.09, bot, 0.18, top - bot))
+
+        if not self.draw_cells:
+            # Heatmap mode view: render hollow lightweight wicks and thin open-close outline
+            # so the limit order book heatmap background remains 100% visible underneath
+            p.setPen(pg.mkPen(color, width=1))
+            p.drawLine(QPointF(cx, bar.low), QPointF(cx, bar.high))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(QRectF(cx - 0.06, bot, 0.12, top - bot))
+        else:
+            p.setPen(pg.mkPen(color, width=2))
+            p.drawLine(QPointF(cx, bar.low), QPointF(cx, bar.high))
+            p.setPen(pg.mkPen(color, width=1))
+            p.setBrush(pg.mkBrush(color))
+            p.drawRect(QRectF(cx - 0.09, bot, 0.18, top - bot))
 
     def _paint_block(self, p, x, bar, half, tick, show_text, show_footer, tick_px=8.0) -> None:
         t = self.theme
@@ -175,6 +187,11 @@ class FootprintItem(pg.GraphicsObject):
         max_tot = max((s + b for s, b in cells.values()), default=1) or 1
         max_abs_d = max((abs(b - s) for s, b in cells.values()), default=1) or 1
 
+        if mode == "Profile":
+            # Candle Backbone / Wick Line down center axis (x) behind profile bars
+            p.setPen(pg.mkPen(QColor(255, 255, 255, 45), width=1, style=Qt.PenStyle.DashLine))
+            p.drawLine(QPointF(x, bar.low), QPointF(x, bar.high))
+
         tr = p.transform()
         for ti, (sell_v, buy_v) in cells.items():
             tot = sell_v + buy_v
@@ -197,34 +214,46 @@ class FootprintItem(pg.GraphicsObject):
                                    t.poc_text if is_poc else t.cell_text, font=cell_font)
 
             elif mode == "Cluster":
-                d = buy_v - sell_v
-                bg = QColor(t.poc_bg) if is_poc else (
-                    QColor(t.bull) if d >= 0 else QColor(t.bear))
-                p.fillRect(QRectF(x - half, y, self.BOX_W, tick), bg)
                 if show_text:
-                    self._cell_one(p, tr, x, y, tick, half, _fmt(tot),
-                                   t.poc_text if is_poc else t.cell_text, font=cell_font)
+                    d = buy_v - sell_v
+                    if is_poc:
+                        bg = QColor(255, 193, 7, 140)       # Amber gold POC highlight
+                    elif d >= 0:
+                        bg = QColor(40, 180, 120, 90)       # Sage/Teal green (~35% opacity)
+                    else:
+                        bg = QColor(220, 70, 80, 90)        # Muted coral/crimson red (~35% opacity)
+                    p.fillRect(QRectF(x - half, y, self.BOX_W, tick), bg)
+                    if tot >= getattr(self, "min_cluster_text_vol", 500):
+                        self._cell_one(p, tr, x, y, tick, half, _fmt(tot),
+                                       t.poc_text if is_poc else t.cell_text, font=cell_font)
 
             elif mode == "Profile":
-                w = self.BOX_W * (tot / max_tot)
-                col = QColor(t.bull) if buy_v >= sell_v else QColor(t.bear)
-                if is_poc:
-                    col = QColor(t.va_line)
-                p.fillRect(QRectF(x - half, y, w, tick), col)
                 if show_text:
-                    self._cell_one(p, tr, x, y, tick, half, _fmt(tot), t.cell_text,
+                    w = self.BOX_W * (tot / max_tot)
+                    col = QColor(255, 193, 7) if is_poc else (QColor(t.bull) if buy_v >= sell_v else QColor(t.bear))
+                    p.fillRect(QRectF(x - half, y, w, tick), col)
+                    if is_poc:
+                        # Distinct amber/gold outline border around Point of Control (POC) bar
+                        p.setPen(pg.mkPen(QColor(255, 215, 0), width=1))
+                        p.drawRect(QRectF(x - half, y, w, tick))
+                    self._cell_one(p, tr, x, y, tick, half, _fmt(tot),
+                                   t.poc_text if is_poc else t.cell_text,
                                    align_left=True, font=cell_font)
 
             elif mode == "Delta":
-                d = buy_v - sell_v
-                inten = min(1.0, abs(d) / max_abs_d)
-                base = QColor(t.bull) if d >= 0 else QColor(t.bear)
-                col = QColor(base.red(), base.green(), base.blue(),
-                             int(60 + 195 * inten))
-                p.fillRect(QRectF(x - half, y, self.BOX_W, tick), col)
                 if show_text:
-                    self._cell_one(p, tr, x, y, tick, half,
-                                   f"{'+' if d > 0 else ''}{_fmt(d)}", t.cell_text, font=cell_font)
+                    d = buy_v - sell_v
+                    inten = min(1.0, (abs(d) / max_abs_d) ** 0.75) if max_abs_d > 0 else 0.0
+                    base = QColor(255, 193, 7) if is_poc else (QColor(t.bull) if d >= 0 else QColor(t.bear))
+                    col = QColor(base.red(), base.green(), base.blue(), int(40 + 195 * inten))
+                    p.fillRect(QRectF(x - half, y, self.BOX_W, tick), col)
+                    if is_poc:
+                        p.setPen(pg.mkPen(QColor(255, 215, 0, 180), width=1))
+                        p.drawRect(QRectF(x - half, y, self.BOX_W, tick))
+                    if abs(d) >= getattr(self, "min_delta_text_vol", 500):
+                        self._cell_one(p, tr, x, y, tick, half,
+                                       f"{'+' if d > 0 else ''}{_fmt(d)}",
+                                       t.poc_text if is_poc else t.cell_text, font=cell_font)
 
         if self.show_imbalance and mode == "Footprint":
             self._paint_stacks(p, x, tick, half, sorted(buy_imb), sorted(sell_imb))
@@ -246,14 +275,19 @@ class FootprintItem(pg.GraphicsObject):
         p.restore()
 
     def _cell_one(self, p, tr, x, y, tick, half, text, color, align_left=False, font=None) -> None:
+        r = tr.mapRect(QRectF(x - half + 0.03, y, self.BOX_W - 0.06, tick))
+        row_h = abs(r.height())
+        if row_h < 7.0:
+            return  # skip text if row height is too narrow to prevent overlap
         p.save()
         p.resetTransform()
-        p.setFont(font or self.font)
+        f = QFont(font or self.font)
+        if row_h < 13.0:
+            f.setPointSize(max(6, int(row_h - 4)))
+        p.setFont(f)
         p.setPen(pg.mkPen(color))
-        r = tr.mapRect(QRectF(x - half + 0.03, y, self.BOX_W - 0.06, tick))
         align = (Qt.AlignmentFlag.AlignVCenter |
-                 (Qt.AlignmentFlag.AlignLeft if align_left else Qt.AlignmentFlag.AlignHCenter) |
-                 Qt.TextFlag.TextDontClip)
+                 (Qt.AlignmentFlag.AlignLeft if align_left else Qt.AlignmentFlag.AlignHCenter))
         p.drawText(r, align, text)
         p.restore()
 
@@ -268,24 +302,35 @@ class FootprintItem(pg.GraphicsObject):
 
     def _paint_footer(self, p, tr, x, bar, half) -> None:
         t = self.theme
-        pt_screen = tr.map(QPointF(x, bar.low))
-        pt_left = tr.map(QPointF(x - half, bar.low))
-        pt_right = tr.map(QPointF(x + half, bar.low))
+        vb = self.getViewBox()
+        if vb is not None:
+            yr = vb.viewRange()[1]
+            y_bottom = yr[0]  # fixed footer bar aligned above bottom time axis
+        else:
+            y_bottom = bar.low
+
+        pt_screen = tr.map(QPointF(x, y_bottom))
+        pt_left = tr.map(QPointF(x - half, y_bottom))
+        pt_right = tr.map(QPointF(x + half, y_bottom))
         w_screen = abs(pt_right.x() - pt_left.x())
         
         # Wide enough screen box (min 80px) centered at candle, unclipped
         w_box = max(w_screen, 80.0)
-        r = QRectF(pt_screen.x() - w_box / 2, pt_screen.y() + 4, w_box, 32)
+        r = QRectF(pt_screen.x() - w_box / 2, pt_screen.y() - 36, w_box, 32)
         
         p.save()
         p.resetTransform()
+        p.setBrush(QBrush(QColor(10, 17, 40, 235)))
+        p.setPen(pg.mkPen(QColor(30, 44, 79, 200), width=1))
+        p.drawRoundedRect(r, 4.0, 4.0)
+
         p.setFont(self.font)
         d = bar.delta
         p.setPen(pg.mkPen(t.delta_up if d >= 0 else t.delta_dn))
         align = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextDontClip
-        p.drawText(r, align, f"Δ {'+' if d > 0 else ''}{_fmt(d)}")
+        p.drawText(r.adjusted(0, 2, 0, 0), align, f"Δ {'+' if d > 0 else ''}{_fmt(d)}")
         p.setPen(pg.mkPen(t.cell_text))
-        p.drawText(r.adjusted(0, 14, 0, 0), align, _fmt(bar.volume))
+        p.drawText(r.adjusted(0, 16, 0, 0), align, _fmt(bar.volume))
         p.restore()
 
 

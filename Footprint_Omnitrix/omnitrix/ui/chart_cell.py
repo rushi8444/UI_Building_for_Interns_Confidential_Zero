@@ -598,8 +598,9 @@ class ChartCellWidget(QWidget):
 
         lo = min(b.low for b in vis)
         hi = max(b.high for b in vis)
-        margin = (hi - lo) * 0.05 or 1.0
-        self.price_plot.setYRange(lo - margin, hi + margin, padding=0)
+        margin_top = (hi - lo) * 0.05 or 1.0
+        margin_bot = max((hi - lo) * 0.15, 3.0 * self.fp.tick)  # Extra bottom margin for footer summary pills
+        self.price_plot.setYRange(lo - margin_bot, hi + margin_top, padding=0)
 
     def _on_x_range_changed(self, plot, range_tuple):
         if getattr(self.price_vb, 'is_dragging', False):
